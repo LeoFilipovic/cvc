@@ -1390,7 +1390,7 @@ int main(int argc, char **argv) {
   int c;
   int filename_set = 0;
   int exitstatus;
-  int io_proc = 2;
+  int io_proc = -1;
   int check_propagator_residual = 0;
   char filename[400];
   double **mzz[2] = { NULL, NULL }, **mzzinv[2] = { NULL, NULL };
@@ -1653,24 +1653,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "[hlbl_mII_invert_contract] Failed to initialize props %s %d\n", __FILE__, __LINE__);
     EXIT(123);
   }
-
-  /***********************************************************
-   * P1_{rho,sigma,nu}
-   ***********************************************************/
-  const int Lmax = get_Lmax();
-  double ***** P1 = init_5level_dtable ( 2, 4, 4, 4, Lmax );
-  if ( P1 == NULL )
-  {
-    fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
-    EXIT(123);
-  }
-  memset ( (void*)P1[0][0][0][0], 0, sizeof(double)*2*4*4*4*Lmax );
-
-  /***********************************************************
-   * P2/3/x_{rho,sigma,nu} will be allocated later
-   ***********************************************************/
-  double ****** P23x; // = init_6level_dtable ( MAX_SOURCE_PAIR_NUMBER, kernel_n*kernel_n_geom, 2, 4, 4, 4 );
-
+  
   /***********************************************************
    * unit for x, y
    ***********************************************************/
@@ -1945,7 +1928,19 @@ int main(int argc, char **argv) {
       // TODO: remove iflavor index from P1, P2, P3
       // NOTE: need to move block to function for convenient control flow if
       // we remove the iflavor loop.
-      for ( int iflavor = 0; iflavor <= 0; iflavor++ ) {
+      //for ( int iflavor = 0; iflavor <= 0; iflavor++ ) 
+      {
+        /***********************************************************
+         * P1_{rho,sigma,nu}
+         ***********************************************************/
+        const int Lmax = get_Lmax();
+        double ***** P1 = init_5level_dtable ( 1, 4, 4, 4, Lmax );
+        if ( P1 == NULL )
+        {
+          fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
+          EXIT(123);
+        }
+
         int ipair = -1;
         for ( int jpair = 0; jpair < g_source_pair_tgt_number; jpair++ )
         {
@@ -1967,7 +1962,10 @@ int main(int argc, char **argv) {
         
         int n_yp = g_source_pair_targets_number[ipair];
         const int * gyp = (const int*) g_source_pair_targets_list[ipair];
-        P23x = init_6level_dtable ( n_yp, kernel_n*kernel_n_geom, 2, 4, 4, 4 );
+        /***********************************************************
+         * P2/3/x_{rho,sigma,nu}
+         ***********************************************************/
+        double ****** P23x = init_6level_dtable ( n_yp, kernel_n*kernel_n_geom, 1, 4, 4, 4 );
         if ( P23x == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
@@ -1978,7 +1976,7 @@ int main(int argc, char **argv) {
          * compute P1, P2, P3, ...
          **********************************************************/
         compute_2p2_pieces(
-            fwd_y, P1, P23x, gsy, iflavor, io_proc, n_yp, gyp,
+            fwd_y, P1, P23x, gsy, 0, io_proc, n_yp, gyp,
             xunit, spinor_work, kqed_t, VOLUME, Nconf);
         
         /* compute_2p2_gpu(fwd_y, P1[0][0][0][0], P23x[0][0][0][0][0], iflavor, gsy, gyp, n_yp, 
@@ -1989,7 +1987,7 @@ int main(int argc, char **argv) {
         if ( io_proc == 2 )
         {
           int ncdim = 5;
-          int cdim[5] = { 2, 4, 4, 4, Lmax };
+          int cdim[5] = { 1, 4, 4, 4, Lmax };
           char key[100];
           sprintf (key, "/P1/t%dx%dy%dz%d", gsy[0], gsy[1], gsy[2], gsy[3] );
 
@@ -2003,7 +2001,7 @@ int main(int argc, char **argv) {
         if ( io_proc == 2 )
         {
           int ncdim = 4;
-          int cdim[4] = { 2, 4, 4, 4 };
+          int cdim[4] = { 1, 4, 4, 4 };
           char key[100];
           for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
           {
@@ -2028,7 +2026,7 @@ int main(int argc, char **argv) {
             }
           }
         }
-
+        fini_5level_dtable ( &P1 );
         fini_6level_dtable( &P23x );
         
       } /* end of P1, P2, P3, ... */
@@ -2237,8 +2235,6 @@ int main(int argc, char **argv) {
   fini_2level_dtable ( &spinor_work );
   fini_prop ( &fwd_src );
   fini_prop ( &fwd_y );
-
-  fini_5level_dtable ( &P1 );
 
 #ifndef HAVE_TMLQCD_LIBWRAPPER
   free(g_gauge_field);
