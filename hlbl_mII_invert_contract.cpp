@@ -39,6 +39,7 @@ extern "C"
 
 #ifdef HAVE_CUDA
 #  include "cuda_lattice.h"
+//#  include "hlbl_kernels/kernels.cu"
 #endif
 
 #define MAIN_PROGRAM
@@ -383,6 +384,7 @@ inline void compute_dzu_dzsu(
     double ** spinor_work, unsigned VOLUME) {
 
   struct timeval ta, tb;
+  struct timeval ta_kern, tb_kern;
 
 #if _WITH_TIMER
   gettimeofday ( &ta, (struct timezone *)NULL );
@@ -410,9 +412,20 @@ inline void compute_dzu_dzsu(
   Geom local_geom { .T = T, .LX = LX, .LY = LY, .LZ = LZ };
   Geom global_geom { .T = T_global, .LX = LX_global, .LY = LY_global, .LZ = LZ_global };
   Coord d_gsx = { .t = gsx[0], .x = gsx[1], .y = gsx[2], .z = gsx[3] };
+
+#if _WITH_TIMER
+  // time the kernel only
+  gettimeofday ( &ta_kern, (struct timezone *)NULL );
+#endif
   cu_dzu_dzsu(
       d_dzu, d_dzsu, fwd_src, fwd_y, iflavor, d_proc_coords, d_gsx,
       global_geom, local_geom);
+#if _WITH_TIMER
+  gettimeofday ( &tb_kern, (struct timezone *)NULL );
+  show_time ( &ta_kern, &tb_kern, "hlbl_mII_invert_contract", "dzu-dzsu kernel", io_proc == 2 );
+#endif
+
+
   checkCudaErrors(cudaDeviceSynchronize());
   checkCudaErrors(cudaMemcpy(
       (void*)local_dzu, (const void*)d_dzu, sizeof_dzu, cudaMemcpyDeviceToHost));
@@ -439,7 +452,7 @@ inline void compute_dzu_dzsu(
 
 #if _WITH_TIMER
   gettimeofday ( &tb, (struct timezone *)NULL );
-  show_time ( &ta, &tb, "hlbl_mII_invert_contract", "dzu-dzsu", io_proc == 2 );
+  show_time ( &ta, &tb, "hlbl_mII_invert_contract", "dzu-dzsu total", io_proc == 2 );
 #endif
 
 
@@ -1360,6 +1373,7 @@ inline void compute_4pt_contraction(
 /***********************************************************/
 /***********************************************************/
 
+/* utilities */
 void usage() {
   fprintf(stdout, "Code to perform contractions for hlbl tensor\n");
   fprintf(stdout, "Usage:    [options]\n");
@@ -1376,7 +1390,7 @@ int main(int argc, char **argv) {
   int c;
   int filename_set = 0;
   int exitstatus;
-  int io_proc = -1;
+  int io_proc = 2;
   int check_propagator_residual = 0;
   char filename[400];
   double **mzz[2] = { NULL, NULL }, **mzzinv[2] = { NULL, NULL };
@@ -1463,10 +1477,10 @@ int main(int argc, char **argv) {
 #ifdef HAVE_OPENMP
   if(g_cart_id == 0) fprintf(stdout, "# [hlbl_mII_invert_contract] setting omp number of threads to %d\n", g_num_threads);
   omp_set_num_threads(g_num_threads);
-#pragma omp parallel
+/* #pragma omp parallel
 {
   fprintf(stdout, "# [hlbl_mII_invert_contract] proc%.4d thread%.4d using %d threads\n", g_cart_id, omp_get_thread_num(), omp_get_num_threads());
-}
+} */
 #else
   if(g_cart_id == 0) fprintf(stdout, "[hlbl_mII_invert_contract] Warning, resetting global thread number to 1\n");
   g_num_threads = 1;
@@ -1966,7 +1980,9 @@ int main(int argc, char **argv) {
         compute_2p2_pieces(
             fwd_y, P1, P23x, gsy, iflavor, io_proc, n_yp, gyp,
             xunit, spinor_work, kqed_t, VOLUME, Nconf);
-
+        
+        /* compute_2p2_gpu(fwd_y, P1[0][0][0][0], P23x[0][0][0][0][0], iflavor, gsy, gyp, n_yp, 
+          xunit, kqed_t, VOLUME, g_proc_coords) */
         /**********************************************************
          * write P1, P2, P3, ...
          **********************************************************/
@@ -2247,7 +2263,7 @@ int main(int argc, char **argv) {
 #endif
 
   gettimeofday ( &end_time, (struct timezone *)NULL );
-  show_time ( &start_time, &end_time, "hlbl_mII_invert_contract", "runtime", g_cart_id == 0 );
+  show_time ( &start_time, &end_time, "hlbl_mII_invert_contract", "runtime", (g_cart_id == 0) );
 
   return(0);
 }
