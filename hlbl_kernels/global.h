@@ -6,15 +6,15 @@
 #include <mpi.h>
 
 #define _GSI(x) 24*x
-#define T_global 16
-#define LX_global 16
-#define LY_global 16
-#define LZ_global 16
+#define T_global 80
+#define LX_global 40
+#define LY_global 40
+#define LZ_global 40
 
 
 #define NPROCT 2
-#define NPROCX 2
-#define NPROCY 2
+#define NPROCX 1
+#define NPROCY 1
 #define NPROCZ 1 
 
 const int T = T_global/NPROCT;
@@ -34,7 +34,7 @@ const int idx_comb[6][2] = {
   {2,3} };
 
 // MPI
-MPI_Comm g_cart_grid;
-int g_cart_id;
-int g_proc_coords[4]={0};
+extern MPI_Comm g_cart_grid;
+extern int g_cart_id;
+extern int g_proc_coords[4];
 #endif

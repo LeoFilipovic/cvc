@@ -39,7 +39,7 @@ extern "C"
 
 #ifdef HAVE_CUDA
 #  include "cuda_lattice.h"
-//#  include "hlbl_kernels/kernels.cu"
+#  include "hlbl_kernels/kernels.cuh"
 #endif
 
 #define MAIN_PROGRAM
@@ -90,7 +90,7 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
 #endif
 #endif
 
-#define kernel_n_geom 5
+#define kernel_n_geom 3
 #ifdef CUDA_N_QED_GEOM
 #if CUDA_N_QED_GEOM != kernel_n_geom
 #error "Mismatching number of QED kernel geometries between CUDA and CPU"
@@ -110,8 +110,11 @@ QED_kernel_LX_ptr KQED_LX[kernel_n] = {
 const char * KQED_NAME[kernel_n] = {
   "L0", "L3", "LLambda0.4"
 };
-const char * KQED_GEOM_NAME[kernel_n_geom] = {
+/* const char * KQED_GEOM_NAME[kernel_n_geom] = {
   "P2_0", "P2_1", "P3", "P4_0", "P4_1"
+}; */
+const char * KQED_GEOM_NAME[3] = {
+  "P2_0", "P2_1", "P3"
 };
 
 /***********************************************************
@@ -823,7 +826,7 @@ inline void compute_2p2_pieces(
           int const sigma = idx_comb[k][1];
           for ( int nu = 0; nu < 4; nu++ )
           {
-            #if kernel_n_geom != 5
+            #if kernel_n_geom != 3
             #error "Number of QED kernel geometries does not match implementation"
             #endif
             for ( int mu = 0; mu < 4; mu++ )
@@ -1859,9 +1862,9 @@ int main(int argc, char **argv) {
       /***********************************************************/
       /***********************************************************/
 
-#if _WITH_TIMER
+      //#if _WITH_TIMER
       gettimeofday ( &ta, (struct timezone *)NULL );
-#endif
+      //#endif
       for ( int iflavor = 0; iflavor <= 1; iflavor++ ) 
       {
  
@@ -1911,10 +1914,11 @@ int main(int argc, char **argv) {
             
         }  /* end of loop on spin-color components */
       }  /* end of loop on flavor for fwd_y */
-#if _WITH_TIMER
+       fprintf(stdout, "# [hlbl_mII_invert_contract] Inversion complete\n");
+      //#if _WITH_TIMER
       gettimeofday ( &tb, (struct timezone *)NULL );
       show_time ( &ta, &tb, "hlbl_mII_invert_contract", "invert-y", io_proc == 2 );
-#endif
+      //#endif
 
       /***********************************************************/
       /***********************************************************/
@@ -1930,17 +1934,6 @@ int main(int argc, char **argv) {
       // we remove the iflavor loop.
       //for ( int iflavor = 0; iflavor <= 0; iflavor++ ) 
       {
-        /***********************************************************
-         * P1_{rho,sigma,nu}
-         ***********************************************************/
-        const int Lmax = get_Lmax();
-        double ***** P1 = init_5level_dtable ( 1, 4, 4, 4, Lmax );
-        if ( P1 == NULL )
-        {
-          fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
-          EXIT(123);
-        }
-
         int ipair = -1;
         for ( int jpair = 0; jpair < g_source_pair_tgt_number; jpair++ )
         {
@@ -1957,12 +1950,23 @@ int main(int argc, char **argv) {
         {
           fprintf(stdout, "[hlbl_mII_invert_contract] no yp targets for this coord, "
                   "skipping 2+2 pieces\n");
-          break;
         }
-        
+        else
+        {
         int n_yp = g_source_pair_targets_number[ipair];
         const int * gyp = (const int*) g_source_pair_targets_list[ipair];
         /***********************************************************
+         * P1_{rho,sigma,nu}
+         ***********************************************************/
+        const int Lmax = get_Lmax();
+        double ***** P1 = init_5level_dtable ( 1, 4, 4, 4, Lmax );
+        if ( P1 == NULL )
+        {
+          fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
+          EXIT(123);
+        }
+
+	      /***********************************************************
          * P2/3/x_{rho,sigma,nu}
          ***********************************************************/
         double ****** P23x = init_6level_dtable ( n_yp, kernel_n*kernel_n_geom, 1, 4, 4, 4 );
@@ -1975,12 +1979,19 @@ int main(int argc, char **argv) {
         /**********************************************************
          * compute P1, P2, P3, ...
          **********************************************************/
-        compute_2p2_pieces(
+        /* compute_2p2_pieces(
             fwd_y, P1, P23x, gsy, 0, io_proc, n_yp, gyp,
-            xunit, spinor_work, kqed_t, VOLUME, Nconf);
-        
-        /* compute_2p2_gpu(fwd_y, P1[0][0][0][0], P23x[0][0][0][0][0], iflavor, gsy, gyp, n_yp, 
-          xunit, kqed_t, VOLUME, g_proc_coords) */
+            xunit, spinor_work, kqed_t, VOLUME, Nconf); */
+
+        //#if _WITH_TIMER
+        gettimeofday ( &ta, (struct timezone *)NULL );
+        //#endif
+        compute_2p2_gpu(fwd_y, P1[0][0][0][0], P23x[0][0][0][0][0], 0, gsy, gyp, n_yp, xunit, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+        //#if _WITH_TIMER
+        gettimeofday ( &tb, (struct timezone *)NULL );
+        show_time ( &ta, &tb, "hlbl_mII_invert_contract", "2+2 pieces", io_proc == 2 );
+        //#endif
+
         /**********************************************************
          * write P1, P2, P3, ...
          **********************************************************/
@@ -1990,6 +2001,7 @@ int main(int argc, char **argv) {
           int cdim[5] = { 1, 4, 4, 4, Lmax };
           char key[100];
           sprintf (key, "/P1/t%dx%dy%dz%d", gsy[0], gsy[1], gsy[2], gsy[3] );
+          fprintf(stdout, "[hlbl_mII_invert_contract] writing P1 value %f\n", P1[0][0][0][0][0]);
 
           exitstatus = write_h5_contraction ( P1[0][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
           if ( exitstatus != 0 )
@@ -2003,11 +2015,12 @@ int main(int argc, char **argv) {
           int ncdim = 4;
           int cdim[4] = { 1, 4, 4, 4 };
           char key[100];
-          for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
+          fprintf(stdout, "[hlbl_mII_invert_contract] writing P2/P3/x values %f\n", P23x[0][0][0][0][0][1]);
+          for ( int iyp = 0; iyp < n_yp; iyp++ )
           {
-            for ( int iyp = 0; iyp < n_yp; iyp++ )
+            for ( int ikernel = 0; ikernel < 3; ikernel++ )
             {
-              for ( int igeom = 0; igeom < kernel_n_geom; igeom++ )
+              for ( int igeom = 0; igeom < 3; igeom++ )
               {
                 sprintf (key, "/%s/t%dx%dy%dz%d/t%dx%dy%dz%d/%s",
                          KQED_GEOM_NAME[igeom], gsy[0], gsy[1], gsy[2], gsy[3],
@@ -2028,7 +2041,7 @@ int main(int argc, char **argv) {
         }
         fini_5level_dtable ( &P1 );
         fini_6level_dtable( &P23x );
-        
+        }
       } /* end of P1, P2, P3, ... */
       
       for ( int iflavor = 0; iflavor <= 1; iflavor++ ) 

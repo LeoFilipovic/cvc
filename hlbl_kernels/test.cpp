@@ -1,4 +1,6 @@
+#include "cvc_linalg.h"
 #include "kernels.h"
+//#include "global.h"
 
 int main ( int argc, char **argv )
 {
@@ -17,8 +19,6 @@ int main ( int argc, char **argv )
   MPI_Comm_rank(g_cart_grid, &g_cart_id);
   MPI_Cart_coords(g_cart_grid, g_cart_id, 4, g_proc_coords); */
 
-
-  init_gamma();
   int const VOLUME = LX * LY * LZ * T; // local volume
   int const RAND = 0;
   const int Lmax = get_Lmax();
@@ -83,9 +83,9 @@ int main ( int argc, char **argv )
   
   //check_Pi(VOLUME);
   //check_integral(VOLUME, src[0], src[1], src[2], src[3]);
-  check_p23(VOLUME, src, 2, (const int *)y_coord, xunit);
+  //check_p23(VOLUME, src, 2, (const int *)y_coord, xunit);
 
-  //check_Pi_cuda();
+  check_Pi_cuda();
   //check_P1_cuda();
   //check_P23_cuda();
 

@@ -242,7 +242,7 @@ __global__ void ker_dzu_dzsu(
 // typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const struct QED_kernel_temps t, double kerv[6][4][4][4] );
 
 __device__
-void KQED_LX(
+void static KQED_LX(
     int ikernel, const double xm[4], const double ym[4],
     const struct QED_kernel_temps kqed_t, double kerv[6][4][4][4]) {
 #if CUDA_N_QED_KERNEL != 3
@@ -703,7 +703,7 @@ void ker_2p2_pieces(
         for (int rho = 0; rho < 4; ++rho) {
           for (int sigma = 0; sigma < 4; ++sigma) {
             for (int nu = 0; nu < 4; ++nu) {
-              #if CUDA_N_QED_GEOM != 5
+              #if CUDA_N_QED_GEOM != 3
               #error "Number of QED kernel geometries does not match implementation"
               #endif
               ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 0)*4 + rho)*4 + sigma)*4 + nu;

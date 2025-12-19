@@ -5,10 +5,12 @@
 #include "cvc_linalg.h"
 //#include <mpi.h>
 #include <omp.h>
-#include "global.h"
+//#include "global.h"
 extern "C" {
-#include "KQED.h"
+//#include "KQED.h"
 }
+
+#include "kernels.h"
 
 typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const struct QED_kernel_temps t, double kerv[6][4][4][4] );
 void QED_kernel_L0P4( const double xv[4], const double yv[4], const struct QED_kernel_temps t, double kerv[6][4][4][4] )
@@ -21,7 +23,7 @@ QED_kernel_LX_ptr KQED_LX[kernel_n] = {
   QED_kernel_L0P4,
 };
 
-inline static int get_Lmax()
+int get_Lmax()
 {
   int Lmax = 0;
   if ( T_global >= Lmax ) Lmax = T_global;
@@ -31,7 +33,7 @@ inline static int get_Lmax()
   return Lmax;
 }
 
-inline static void site_map_zerohalf (int xv[4], int const x[4] )
+inline void site_map_zerohalf (int xv[4], int const x[4] )
 {
   xv[0] = ( x[0] > T_global   / 2 ) ? x[0] - T_global   : (  ( x[0] < T_global   / 2 ) ? x[0] : 0 );
   xv[1] = ( x[1] > LX_global  / 2 ) ? x[1] - LX_global  : (  ( x[1] < LX_global  / 2 ) ? x[1] : 0 );
@@ -675,6 +677,7 @@ void check_integral(size_t vol, int w0, int w1, int w2, int w3) {
   free(P1);
   free(P1_check);
 }
+
 void check_p23(unsigned vol, const int* gsw, int n_y, const int *gycoords, const double xunit[2]) {
   double *pi = (double *)calloc(16 * vol, sizeof(double));
   double *pi_rearrange = (double *)calloc(16 * vol, sizeof(double));
@@ -783,7 +786,7 @@ void check_Pi_cuda() {
 }
 
 void check_P1_cuda() {
-  int const vol = LX_global * LY_global * LZ_global * T_global;
+  int const vol = LX * LY * LZ * T;
   double*p1 = (double *)malloc(64 * T_global * sizeof(double));
   double *Pi = (double *) malloc(sizeof(double) * 16 * vol);
   srand(1234);
@@ -808,7 +811,7 @@ void check_P1_cuda() {
     const double diff = p0 - p1;
     if (diff * diff > 1e-18) {
       flag=1;
-      printf("P1 difference at [%d], %.10f VS %.10f\n.", i, p0, p1);
+      printf("P1 difference at [%d], %.10f VS %.10f\n", i, p0, p1);
     }
   }
   if (flag) printf("P1 correctnenss FAILED.\n");
@@ -820,7 +823,7 @@ void check_P1_cuda() {
 
 void check_P23_cuda() {
   int const vol = LX_global * LY_global * LZ_global * T_global;
-  const int n_y = 10;
+  const int n_y = 2;
   const int gsw[4] = {1,1,1,1};
   int *gycoords = (int *)malloc(sizeof(int) * 4 * n_y);
   for (int i=0; i<n_y; i++){
