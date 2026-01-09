@@ -1,6 +1,7 @@
 #include "kernels.cuh"
 #include <mpi.h>
 #include "global.h"
+#include "cuda_lattice_test.cuh"
 
 int main(int argc, char **argv) {
     // allocate fwd_y on the host
@@ -44,31 +45,28 @@ int main(int argc, char **argv) {
     // set up MPI cartesian
     MPI_Init(&argc, &argv);
     int size; MPI_Comm_size(MPI_COMM_WORLD, &size);
-    int rank; MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     int const proc_dim[4] = {NPROCT, NPROCX, NPROCY, NPROCZ};
-    const int period[4] = {1,1,1,1};
-    MPI_Cart_create(MPI_COMM_WORLD, 4, proc_dim, period, true, &g_cart_grid);
+    const int period[4] = {0,0,0,0};
+    MPI_Cart_create(MPI_COMM_WORLD, 4, proc_dim, period, 0, &g_cart_grid);
     MPI_Comm_rank(g_cart_grid, &g_cart_id);
     MPI_Cart_coords(g_cart_grid, g_cart_id, 4, g_proc_coords);
+
     int device_id=0;
     char* slurm_localid_str = getenv("SLURM_LOCALID");
     if (slurm_localid_str != NULL) {
-        // Map based on the local index 0, 1, 2, 3
         device_id = atoi(slurm_localid_str); 
     } else {
-        // Fallback or debug (less reliable on a cluster)
-        device_id = rank % 4;
+        device_id = g_cart_id % 4;
     }
-    
-    // Set the device
+
     cudaSetDevice(device_id); 
 
     // --- Optional: Print for Debugging ---
-    printf("MPI Rank %d running on CUDA Device %d\n", rank, device_id);
+    int device_id_check;
+    cudaGetDevice(&device_id_check);
+    printf("MPI Rank %d running on CUDA Device %d\n", g_cart_id, device_id_check);
 
-    //cudaSetDevice(rank%4); // bind GPU to rank?
-    //if (g_cart_id == 0) 
-        printf ("MPI cartesian dimension %dx%dx%dx%d\n", g_proc_coords[0], g_proc_coords[1], g_proc_coords[2], g_proc_coords[3]);
+    printf ("MPI cartesian dimension %dx%dx%dx%d\n", g_proc_coords[0], g_proc_coords[1], g_proc_coords[2], g_proc_coords[3]);
 
     int const VOL = T * LX * LY * LZ;
     double *fwd_y = (double *)malloc(2 * 12 * _GSI(VOL) * sizeof(double));
@@ -83,7 +81,7 @@ int main(int argc, char **argv) {
                 for (int ib=0; ib<24; ib++)
                     fwd_y_tmp[ifl * 12 * 24 * VOL + x * 12 * 24 + ia * 24 + ib] = fwd_y[ifl * 12 * 24 * VOL + ia * 24 + x * 24 + ib];
  */
-    const int n_y = 20;
+    const int n_y = 40;
     const int gsw[4] = {1,1,1,1};
     int *gycoords = (int *)malloc(sizeof(int) * 4 * n_y);
     for (int i=0; i<n_y; i++){
@@ -99,15 +97,32 @@ int main(int argc, char **argv) {
     double *P23 = (double *)malloc(sizeof(double) * n_y * kernel_n * kernel_n_geom * 4 * 4 *4);
     struct QED_kernel_temps kqed_t;
     initialise(&kqed_t);
-    //compute_2p2_gpu(fwd_y, P1, P23, 0, gsw, gycoords, n_y, xunit, kqed_t, VOL, g_proc_coords, g_cart_grid,  T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+    //compute_2p2_gpu(fwd_y, P1, P23, 0, gsw, gycoords, n_y, xunit, kqed_t, VOL, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
     //record_pi_cuda(fwd_y, VOL, 0, T_global, LX_global, LY_global, LZ_global);
     double *Pi = (double *) malloc(sizeof(double) * 16 * VOL);
     srand(1234);
     for (int i=0; i<16 * VOL; i++) Pi[i] = rand()*2./RAND_MAX - 1.;
-    //record_p23_cuda(Pi, n_y, gsw, gycoords, xunit, kqed_t, VOL, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+    record_p23_cuda(Pi, n_y, gsw, gycoords, xunit, kqed_t, VOL, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
     //record_p1_cuda(Pi, 0, gsw, VOL, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
-    record_2p2_cuda(fwd_y, P1, P23, 0, gsw, gycoords, n_y, xunit, kqed_t, VOL, g_proc_coords, g_cart_grid, T_global, LX_global, LY_global, LZ_global, T, LX, LY, LZ);
+    //record_2p2_cuda(fwd_y, P1, P23, 0, gsw, gycoords, n_y, xunit, kqed_t, VOL, g_proc_coords, g_cart_grid, T_global, LX_global, LY_global, LZ_global, T, LX, LY, LZ);
 
+    /* double **spinor_work;
+    compute_2p2_pieces(fwd_y, P1, P23, gsw, 0, 0, n_y, gycoords, xunit, spinor_work, kqed_t,VOL, 1);
+    if (g_proc_coords[0]==0 && g_proc_coords[1]==0 && g_proc_coords[2]==0 && g_proc_coords[3]==0) {
+
+        FILE *file23;
+        for (int i=0; i< n_y * kernel_n * kernel_n_geom * 4 * 4 *4; i++) {
+            file23 = fopen("2p2_p23_tej.dat", "a");
+            fprintf(file23, "%.10e\n", P23[i]);
+            fclose(file23);
+        }
+        FILE *file1;
+        for (int i=0; i< 64 * T_global; i++) {
+            file1 = fopen("2p2_p1_tej.dat", "a");
+            fprintf(file1, "%.10e\n", P1[i]);
+            fclose(file1);
+        }
+    } */
     MPI_Finalize();
     return 0;
 }

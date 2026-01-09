@@ -1,0 +1,51 @@
+new time: 
+real    0m39.869s
+user    0m0.020s
+sys     0m0.004s
+
+### strategies ###
+1. break down 2+2 computation into smaller kernels: compute pi, compute P1, compute P2/3
+2. compute pi is local in spacetime dimension, embarasssingly parallel
+3. P1[rho][sigma][nu][z[rho]] = sum pi[sigma][nu][z-w]
+    FROM loop over sigma, nu, z, rho 
+        ----> any thread can access any z[rho], requires atomicAdd to P1
+    TO loop over sigma, nu, z[rho], rho 
+        ----> compute all possible z for fixed z[rho], random access of Pi but can reduce atomicAdd
+    ~ 64 * dim[rho] atomicAdd
+4. P23[y][ikrn, idx][rho, sigma][nu] = sum(x, mu, lambda)   kernel[ikrn][idx][x,y][mu][nu][lambda] * pi[x][mu][lambda]
+    parallelise y, ikrn grid-level, different sm has no dependence 
+    parallelise x ---> require summation at block level
+    store thread local P23[rho, sigma][nu], blocksum with warp-level intrinsics
+    removed atomicAdd
+
+
+### issue ###
+1. spill stores from register pressure/ L2 memory bound 
+-- remove loop over spinor index, explicity blockDim for kernel launch 
+-- "switch" gamma application, remove gamma_permutation, gamma_sign
+-- "switch" KQED_LX
+
+ptxas info    : Compiling entry function '_Z10kernel_p23PdS_iPKiS1_PKd16QED_kernel_tempsjS1_jjjjjjjj' for 'sm_90'
+ptxas info    : Function properties for _Z10kernel_p23PdS_iPKiS1_PKd16QED_kernel_tempsjS1_jjjjjjjj
+    11024 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 98 registers, used 1 barriers
+ptxas info    : Compiling entry function '_Z9kernel_p1PdS_iPKijS1_jjjjjjjj' for 'sm_90'
+ptxas info    : Function properties for _Z9kernel_p1PdS_iPKijS1_jjjjjjjj
+    48 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 45 registers, used 0 barriers
+ptxas info    : Compiling entry function '_Z9kernel_piPdS_ij' for 'sm_90'
+ptxas info    : Function properties for _Z9kernel_piPdS_ij
+    192 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 129 registers, used 1 barriers, 3840 bytes smem
+
+
+
+original time:
+real    0m53.800s
+user    0m0.000s
+sys     0m0.021s
+
+ptxas info    : Compiling entry function '_Z14ker_2p2_piecesPdS_PKdi5CoordS2_iPS2_4Pair16QED_kernel_temps4GeomS6_i' for 'sm_90'
+ptxas info    : Function properties for _Z14ker_2p2_piecesPdS_PKdi5CoordS2_iPS2_4Pair16QED_kernel_temps4GeomS6_i
+    6112 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 250 registers, used 0 barriers
