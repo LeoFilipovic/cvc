@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
                 for (int ib=0; ib<24; ib++)
                     fwd_y_tmp[ifl * 12 * 24 * VOL + x * 12 * 24 + ia * 24 + ib] = fwd_y[ifl * 12 * 24 * VOL + ia * 24 + x * 24 + ib];
  */
-    const int n_y = 40;
+    const int n_y = 2000;
     const int gsw[4] = {1,1,1,1};
     int *gycoords = (int *)malloc(sizeof(int) * 4 * n_y);
     for (int i=0; i<n_y; i++){
@@ -102,13 +102,13 @@ int main(int argc, char **argv) {
     double *Pi = (double *) malloc(sizeof(double) * 16 * VOL);
     srand(1234);
     for (int i=0; i<16 * VOL; i++) Pi[i] = rand()*2./RAND_MAX - 1.;
-    record_p23_cuda(Pi, n_y, gsw, gycoords, xunit, kqed_t, VOL, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+    //record_p23_cuda(Pi, n_y, gsw, gycoords, xunit, kqed_t, VOL, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
     //record_p1_cuda(Pi, 0, gsw, VOL, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
-    //record_2p2_cuda(fwd_y, P1, P23, 0, gsw, gycoords, n_y, xunit, kqed_t, VOL, g_proc_coords, g_cart_grid, T_global, LX_global, LY_global, LZ_global, T, LX, LY, LZ);
+    record_2p2_cuda(fwd_y, P1, P23, 0, gsw, gycoords, n_y, xunit, kqed_t, VOL, g_proc_coords, g_cart_grid, T_global, LX_global, LY_global, LZ_global, T, LX, LY, LZ);
 
-    /* double **spinor_work;
-    compute_2p2_pieces(fwd_y, P1, P23, gsw, 0, 0, n_y, gycoords, xunit, spinor_work, kqed_t,VOL, 1);
-    if (g_proc_coords[0]==0 && g_proc_coords[1]==0 && g_proc_coords[2]==0 && g_proc_coords[3]==0) {
+    double **spinor_work;
+    //compute_2p2_pieces(fwd_y, P1, P23, gsw, 0, 0, n_y, gycoords, xunit, spinor_work, kqed_t,VOL, 1);
+    /*if (g_proc_coords[0]==0 && g_proc_coords[1]==0 && g_proc_coords[2]==0 && g_proc_coords[3]==0) {
 
         FILE *file23;
         for (int i=0; i< n_y * kernel_n * kernel_n_geom * 4 * 4 *4; i++) {

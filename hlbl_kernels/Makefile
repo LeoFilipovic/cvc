@@ -6,7 +6,7 @@ ARCH     := -arch=sm_90
 
 # Standard flags
 CXXFLAGS := -O2 -std=c++17 -fopenmp
-NVFLAGS  := -O2 -ccbin=g++ $(ARCH) --relocatable-device-code=true -Xcompiler -fopenmp --ptxas-options=-v -lineinfo
+NVFLAGS  := -O2 -ccbin=g++ $(ARCH)  --relocatable-device-code=true -Xcompiler -fopenmp --ptxas-options=-v -lineinfo
 
 # --- PATHS ---
 # CSCS typically sets CRAY_MPICH_DIR or MPICH_DIR when the module is loaded.

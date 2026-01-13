@@ -239,10 +239,6 @@ __device__ inline static int prop_idx(int iflavour, int ia, int x, int ib, unsig
          + x * 24 + ib;
 }
 
-__device__ inline static int prop_idx_(int iflavour, int ia, int x, int ib, unsigned VOL) {
-    return iflavour * 12 * 24 * VOL + x * 12 * 24 + ia * 24 + ib;
-}
-
 __device__ inline static void site_map_zerohalf (int xv[4], int const x[4], unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global)
 {
   xv[0] = ( x[0] > T_global   / 2 ) ? x[0] - T_global   : (  ( x[0] < T_global   / 2 ) ? x[0] : 0 );
@@ -280,6 +276,7 @@ __device__ void set_zero(double *v, int len) {
 }
 
 __global__ void kernel_pi(double* fwd_y, double * Pi, int iflavor, unsigned const VOLUME){
+    __shared__ double u[12 * 24];
     __shared__ double d[12 * 24];
     __shared__ double gu_diag[4][4][12];
 
@@ -289,6 +286,7 @@ __global__ void kernel_pi(double* fwd_y, double * Pi, int iflavor, unsigned cons
         int const tid = threadIdx.x * blockDim.y * blockDim.z + threadIdx.y * blockDim.z + threadIdx.z;
         //int const off1 = prop_idx_(1-iflavor, 0, ix, 0, VOLUME);
         for (int i = tid; i < 12 * 24; i+=blockDim.x*blockDim.y*blockDim.z) {
+            u[i] = fwd_y[prop_idx(iflavor, i/24, ix, i%24, VOLUME)];
             d[i] = fwd_y[prop_idx(1-iflavor, i/24, ix, i%24, VOLUME)];
         }
         __syncthreads();
@@ -303,7 +301,8 @@ __global__ void kernel_pi(double* fwd_y, double * Pi, int iflavor, unsigned cons
             double gu[24];
             double dot_prod[24];
             /* apply gammas: gu = g_5 g_mu u */
-            _fv_eq_gamma_ti_fv(gu, mu, fwd_y + prop_idx(iflavor, ia, ix, 0, VOLUME));
+            _fv_eq_gamma_ti_fv(gu, mu, u + ia * 24);
+            //_fv_eq_gamma_ti_fv(gu, mu, fwd_y + prop_idx(iflavor, ia, ix, 0, VOLUME));
             _fv_ti_eq_g5(gu);
 
 
@@ -335,59 +334,6 @@ __global__ void kernel_pi(double* fwd_y, double * Pi, int iflavor, unsigned cons
         }
     }
 }
-
-__device__ inline void kernel_pix(double* fwd_y, double* Pi, int const ix, int iflavor, unsigned const VOLUME) {
-    __shared__ double d[12 * 24];
-    __shared__ double gu_diag[4][4][12];
-    // preload d = fwd_y[1-iflavor]
-    int const tid = threadIdx.y * blockDim.z + threadIdx.z;
-    //int const off1 = prop_idx_(1-iflavor, 0, ix, 0, VOLUME);
-    for (int i = tid; i < 12 * 24; i+=blockDim.y*blockDim.z) {
-        d[i] = fwd_y[prop_idx(1-iflavor, i/24, ix, i%24, VOLUME)];
-    }
-    __syncthreads();
-
-    // operation at every lattice site
-    // TODO: MU NU IA
-    int const mu = threadIdx.x;
-    int const nu = threadIdx.y;
-    for (int ia=threadIdx.z; ia<12; ia+=blockDim.z) {
-        double gu[24];
-        double dot_prod[24];
-        /* apply gammas: gu = g_5 g_mu u */
-        _fv_eq_gamma_ti_fv(gu, mu, fwd_y + prop_idx(iflavor, ia, ix, 0, VOLUME));
-        _fv_ti_eq_g5(gu);
-
-
-        /* compute <d, u>, dot_prod = <d, gmu> */
-        for (int ib=0; ib<12; ib++ ) {
-            complex w;
-            _co_eq_fv_dag_ti_fv(&w, d + ib * 24, gu);
-            dot_prod[2*ib] = w.re;
-            dot_prod[2*ib + 1] = w.im;
-        }
-
-        /* apply gammas: gu = g_nu g_5 dot_prod */
-        _fv_ti_eq_g5(dot_prod);
-        _fv_eq_gamma_ti_fv(gu, nu, dot_prod);
-            
-        gu_diag[mu][nu][ia] = gu[2 * ia]; // only real part needed for trace
-    }
-
-    __syncthreads();
-
-    if (threadIdx.z == 0) {
-        /* take trace over ia: pi[x][mu][nu] = Tr[gu] */
-        double trace = 0.0;
-        #pragma unroll
-        for (int ia=0; ia<12; ia++) {
-            //trace += gu[ia * 24 + 2 * ia]; 
-            trace += gu_diag[threadIdx.x][threadIdx.y][ia];
-        }
-        Pi[threadIdx.y] = trace;
-    }
-}
-
 
 // integrate over Pi to get P1, *_proc is the MPI proc's coordinate in each direction
 __global__ void kernel_p1(double *Pi, double *P1, int iflavor, int Lmax, int const gsw[4], unsigned const VOLUME, int const g_proc_coords[4], 
@@ -437,21 +383,6 @@ __global__ void kernel_p1(double *Pi, double *P1, int iflavor, int Lmax, int con
         const unsigned z_w = (zr + local_dim[rho] * g_proc_coords[rho]  + global_dim[rho] - gsw[rho]) % global_dim[rho];
         atomicAdd_system(&P1[rho*16*Lmax + sigma*4*Lmax + nu*Lmax + z_w], sum);
     }
-}
-
-__device__  inline void kernel_p1x(double const Pi[16], double *P1, int const ix, int const x_lex[4], int const gsw[4], unsigned const VOLUME, int const g_proc_coords[4], int const Lmax,
-    unsigned const T, unsigned const LX, unsigned const LY, unsigned const LZ, unsigned const T_global, unsigned const LX_global, unsigned const LY_global, unsigned const LZ_global) {
-    int z_w[4]; //z - w
-    z_w[0] = (x_lex[0] + g_proc_coords[0] * T - gsw[0] + T_global) % T_global;
-    z_w[1] = (x_lex[1] + g_proc_coords[1] * LX - gsw[1] + LX_global) % LX_global;
-    z_w[2] = (x_lex[2] + g_proc_coords[2] * LY - gsw[2] + LY_global) % LY_global;
-    z_w[3] = (x_lex[3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global) % LZ_global;
-
-    // reduce (TODO faster reduce algo?)
-    int const sigma = threadIdx.y / 4;
-    int const nu = threadIdx.y % 4;
-    int const rho = threadIdx.z;
-    atomicAdd_system(&P1[(((rho * 4) + sigma) * 4 + nu) * Lmax + z_w[rho]], Pi[sigma*4+nu]);
 }
 
 //warp-level reduction
@@ -643,13 +574,7 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
 __global__ void kernel_p20(double *pi, double *P23, int n_y, const int gsw[4], const int *gycoords, const double xunit[2],
 QED_kernel_temps kqed_t, unsigned const VOLUME, const int g_proc_coords[4], unsigned const T, unsigned const LX, unsigned const LY, unsigned const LZ, 
 unsigned const T_global, unsigned const LX_global, unsigned const LY_global, unsigned const LZ_global){
-    //set_zero(P23, n_p23);
-    __shared__ double local_p2_0[64];
-    for ( int i = threadIdx.x; i < 64; i += blockDim.x) {
-        local_p2_0[i] = 0.0;
-    }
-    __syncthreads();
-    
+
     for ( int yi = blockIdx.x; yi < n_y; yi+=gridDim.x){
         // For P2: y = (gsy - gsw)
         // For P3: y' = (gsw - gsy)
@@ -663,13 +588,13 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
         };
         int yv[4];
         site_map_zerohalf ( yv, y, T_global, LX_global, LY_global, LZ_global );
-
         double const ym[4] = {yv[0] * xunit[0], yv[1] * xunit[0], yv[2] * xunit[0], yv[3] * xunit[0] };
-        double const ym_minus[4] = { -yv[0] * xunit[0], -yv[1] * xunit[0], -yv[2] * xunit[0], -yv[3] * xunit[0] };
-
+        
         // parallelise over ikernel
-        int ikernel = blockIdx.y;
+        int const ikernel = blockIdx.y;
 
+        double local_p2_0[64]={0};
+        
         //for (int sweep = 0; sweep < (VOLUME + blockDim.x -1) / blockDim.x; sweep++){
         for (int ix = threadIdx.x; ix<VOLUME; ix +=blockDim.x){
             //int const ix = sweep * blockDim.x + threadIdx.x;
@@ -688,9 +613,7 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
 
             int xv[4];
             site_map_zerohalf ( xv, x, T_global, LX_global, LY_global, LZ_global );
-
             double const xm[4] = {xv[0] * xunit[0], xv[1] * xunit[0], xv[2] * xunit[0], xv[3] * xunit[0] };
-            double const xm_mi_ym[4] = {xm[0] - ym[0], xm[1] - ym[1], xm[2] - ym[2], xm[3] - ym[3] };
 
             double kerv1[6][4][4][4] KQED_ALIGN ;
             KQED_LX(ikernel, xm, ym, kqed_t, kerv1);
@@ -700,28 +623,23 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
             for (int nu=0; nu<4; nu++)
             for (int lambda=0; lambda<4; lambda++){
                 // k=0: {0,1}
-                //local_p2_0[0*16 + 1*4 + nu] += kerv1[0][mu][nu][lambda] * pix[mu*4 +lambda];
-                atomicAdd(&local_p2_0[0*16 + 1*4 + nu], kerv1[0][mu][nu][lambda] * pix[mu*4 +lambda]);
-        
+                local_p2_0[0*16 + 1*4 + nu] += kerv1[0][mu][nu][lambda] * pix[mu*4 +lambda];
+                        
                 // k=1: {0,2}
-                //local_p2_0[0*16 + 2*4 + nu] += kerv1[1][mu][nu][lambda] * pix[mu*4 +lambda];
-                atomicAdd(&local_p2_0[0*16 + 2*4 + nu], kerv1[1][mu][nu][lambda] * pix[mu*4 +lambda]);
-            
+                local_p2_0[0*16 + 2*4 + nu] += kerv1[1][mu][nu][lambda] * pix[mu*4 +lambda];
+                            
                 // k=2: {0,3}
-                //local_p2_0[0*16 + 3*4 + nu] += kerv1[2][mu][nu][lambda] * pix[mu*4 +lambda];
-                atomicAdd(&local_p2_0[0*16 + 3*4 + nu], kerv1[2][mu][nu][lambda] * pix[mu*4 +lambda]);
-
-                // k=3: {1,2}
-                //local_p2_0[1*16 + 2*4 + nu] += kerv1[3][mu][nu][lambda] * pix[mu*4 +lambda];
-                atomicAdd(&local_p2_0[1*16 + 2*4 + nu], kerv1[3][mu][nu][lambda] * pix[mu*4 +lambda]);
+                local_p2_0[0*16 + 3*4 + nu] += kerv1[2][mu][nu][lambda] * pix[mu*4 +lambda];
                 
+                // k=3: {1,2}
+                local_p2_0[1*16 + 2*4 + nu] += kerv1[3][mu][nu][lambda] * pix[mu*4 +lambda];
+                                
                 // k=4: {1,3}
-                //local_p2_0[1*16 + 3*4 + nu] += kerv1[4][mu][nu][lambda] * pix[mu*4 +lambda];
-                atomicAdd(&local_p2_0[1*16 + 3*4 + nu], kerv1[4][mu][nu][lambda] * pix[mu*4 +lambda]);
-
+                local_p2_0[1*16 + 3*4 + nu] += kerv1[4][mu][nu][lambda] * pix[mu*4 +lambda];
+                
                 // k=5: {2,3}
-                //local_p2_0[2*16 + 3*4 + nu] += kerv1[5][mu][nu][lambda] * pix[mu*4 +lambda];
-                atomicAdd(&local_p2_0[2*16 + 3*4 + nu], kerv1[5][mu][nu][lambda] * pix[mu*4 +lambda]);
+                local_p2_0[2*16 + 3*4 + nu] += kerv1[5][mu][nu][lambda] * pix[mu*4 +lambda];
+            
             }
         }
         
@@ -764,8 +682,7 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
         site_map_zerohalf ( yv, y, T_global, LX_global, LY_global, LZ_global );
 
         double const ym[4] = {yv[0] * xunit[0], yv[1] * xunit[0], yv[2] * xunit[0], yv[3] * xunit[0] };
-        double const ym_minus[4] = { -yv[0] * xunit[0], -yv[1] * xunit[0], -yv[2] * xunit[0], -yv[3] * xunit[0] };
-
+        
         // parallelise over ikernel
         int ikernel = blockIdx.y;
 
@@ -791,8 +708,7 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
             site_map_zerohalf ( xv, x, T_global, LX_global, LY_global, LZ_global );
 
             double const xm[4] = {xv[0] * xunit[0], xv[1] * xunit[0], xv[2] * xunit[0], xv[3] * xunit[0] };
-            double const xm_mi_ym[4] = {xm[0] - ym[0], xm[1] - ym[1], xm[2] - ym[2], xm[3] - ym[3] };
-
+            
             double kerv2[6][4][4][4] KQED_ALIGN ;
             KQED_LX(ikernel, ym, xm, kqed_t, kerv2);
             #pragma unroll
@@ -954,19 +870,20 @@ __host__ void compute_2p2_gpu(double *fwd_y, double *P1, double *P23, int iflavo
     size_t size_p1  = 4 * 4 * 4 * Lmax;
 
     check(cudaMalloc((void **)&Pi_d, size_pi * sizeof(double)));
-    //check(cudaMalloc((void **)&fwd_y_d, size_fwd * sizeof(double)));
+    //check(cudaMalloc((void **)&fwd_y_d, size_fwd * sizeof(double)));s
     check(cudaMalloc((void **)&P23_d, size_p23 * sizeof(double)));
     check(cudaMalloc((void **)&P1_d, size_p1 * sizeof(double)));
     check(cudaMalloc((void **)&gycoords_d, sizeof(int) * 4 * n_y));
 
     // Async copies (using streams to overlap transfer if needed, though usually fast)
     //check(cudaMemcpy(fwd_y_d, fwd_y, size_fwd * sizeof(double), cudaMemcpyHostToDevice));
+    check(cudaMemset(P1_d, 0, size_p1 * sizeof(double)));
     check(cudaMemcpy(gycoords_d, gycoords, sizeof(int) * 4 * n_y, cudaMemcpyHostToDevice));
 
     /* --- 2. COMPUTE PI (Common Dependency) --- */
     // We launch in the DEFAULT stream. This creates an implicit barrier.
     // P23 and P1 streams will not start until this kernel finishes.
-    dim3 gridPi(132);
+    dim3 gridPi(264);
     dim3 blockPi(4, 4, 12);
     kernel_pi<<<gridPi, blockPi>>>(fwd_y, Pi_d, iflavor, VOLUME);
     //cudaFree(fwd_y_d);
@@ -979,48 +896,57 @@ __host__ void compute_2p2_gpu(double *fwd_y, double *P1, double *P23, int iflavo
 
     /* --- 3. CONCURRENT KERNEL LAUNCH --- */
     
-    // --- Stream 1: P23 ---
-    dim3 gridP23(44, 3);
-    dim3 blockP23(64);
+    // --- Stream x3: P23 ---
+    dim3 gridP23(88, 3);
+    dim3 blockP23(256);
     //kernel_p23<<<gridP23, blockP23, 0, stream_p23>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
     //cudaMemcpyAsync(P23, P23_d, size_p23 * sizeof(double), cudaMemcpyDeviceToHost, stream_p23);
-
     kernel_p20<<<gridP23, blockP23, 0, stream_p20>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
     kernel_p21<<<gridP23, blockP23, 0, stream_p21>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
     kernel_p3<<<gridP23, blockP23, 0, stream_p3>>>(Pi_d,P23_d,n_y,gsw ,gycoords_d,xunit,kqed_t,VOLUME,g_proc_coords,T,LX ,LY,LZ,T_global,LX_global ,LY_global,LZ_global);
-    cudaMemcpyAsync(P23, P23_d + 0 * n_y * kernel_n * 64, size_p23 * sizeof(double), cudaMemcpyDeviceToHost, stream_p20);
-    cudaMemcpyAsync(P23, P23_d + 1 * n_y * kernel_n * 64, size_p23 * sizeof(double), cudaMemcpyDeviceToHost, stream_p21);
-    cudaMemcpyAsync(P23, P23_d + 2 * n_y * kernel_n * 64, size_p23 * sizeof(double), cudaMemcpyDeviceToHost, stream_p3);
 
-    // --- Stream 2: P1 ---
+    // --- Stream x1: P1 ---
     dim3 gridP1(4, 4, 4);
-    dim3 blockP1(64);
+    dim3 blockP1(128);
     kernel_p1<<<gridP1, blockP1, 0, stream_p1>>>(Pi_d, P1_d, iflavor, Lmax, gsw, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
     //kernel_p1<<<gridP1, blockP1>>>(Pi_d, P1_d, iflavor, gsw, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+    cudaMemcpyAsync(P23, P23_d, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p20);
+    cudaMemcpyAsync(P23 + size_p23/3, P23_d + size_p23/3, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p21);
+    cudaMemcpyAsync(P23 + 2 * size_p23/3, P23_d + 2 * size_p23/3, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p3);
     cudaMemcpyAsync(P1, P1_d, size_p1 * sizeof(double), cudaMemcpyDeviceToHost, stream_p1);
 
     /* --- 4. CUDA-AWARE MPI REDUCTION --- */
-    MPI_Request request[2];
+    MPI_Request request[4];
 
     // Wait for P1 Kernel to finish, then start its MPI
     cudaStreamSynchronize(stream_p1);
-    if (MPI_Iallreduce(MPI_IN_PLACE, (void *)P1, size_p1, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[1]) != MPI_SUCCESS) {
+    if (MPI_Iallreduce(MPI_IN_PLACE, (void *)P1, size_p1, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[0]) != MPI_SUCCESS) {
         fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
         MPI_Abort(g_cart_grid, -1);
     }
 
     // Wait for P23 Kernel to finish, then start its MPI
     cudaStreamSynchronize(stream_p20);
+    if(MPI_Iallreduce(MPI_IN_PLACE, (void *)P23, size_p23/3, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[1]) != MPI_SUCCESS) {
+        fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
+        MPI_Abort(g_cart_grid, -1);
+    }
+
     cudaStreamSynchronize(stream_p21);
+    if(MPI_Iallreduce(MPI_IN_PLACE, P23+size_p23/3, size_p23/3, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[2]) != MPI_SUCCESS) {
+        fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
+        MPI_Abort(g_cart_grid, -1);
+    }
+
     cudaStreamSynchronize(stream_p3);
-    if(MPI_Iallreduce(MPI_IN_PLACE, (void *)P23, size_p23, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[0]) != MPI_SUCCESS) {
+    if(MPI_Iallreduce(MPI_IN_PLACE, P23+2*size_p23/3, size_p23/3, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[3]) != MPI_SUCCESS) {
         fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
         MPI_Abort(g_cart_grid, -1);
     }
 
     /* --- 5. CLEANUP --- */
     // Wait for network to finish
-    MPI_Waitall(2, request, MPI_STATUSES_IGNORE);
+    MPI_Waitall(4, request, MPI_STATUSES_IGNORE);
 
     cudaFree(Pi_d);
     //cudaFree(fwd_y_d);
@@ -1045,7 +971,7 @@ __host__ void record_pi_cuda(double *fwd_y, int VOLUME, int iflavor, unsigned T_
     check(cudaMalloc((void **) &fwd_y_d, sizeof(double)* 2 * 12 * 24 * VOLUME));
     check(cudaMemcpy(fwd_y_d, fwd_y, sizeof(double)* 2 * 12 * 24 * VOLUME, cudaMemcpyHostToDevice));
 
-    dim3 gridDim(128);
+    dim3 gridDim(264);
     dim3 blockDim(4, 4, 4);
 
     // call gpu code
@@ -1112,14 +1038,15 @@ __host__ void record_p23_cuda(double *Pi, int n_y, const int gsw[4], const int *
     cudaMemcpy(gycoords_d, gycoords, sizeof(int) * 4 * n_y, cudaMemcpyHostToDevice);
 
 
-    dim3 gridDim(48, 3);
-    dim3 blockDim(64);
+    dim3 gridDim(88, 3);
+    dim3 blockDim(256);
 
     // compute p23 on gpu
     int const g_proc_coords[4] = {0,0,0,0}; // dummy value for testing
     kernel_p20<<<gridDim, blockDim>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
-    //kernel_p21<<<gridDim, blockDim>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
-    //kernel_p3<<<gridDim, blockDim>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+    kernel_p21<<<gridDim, blockDim>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+    kernel_p3<<<gridDim, blockDim>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+    //kernel_p23<<<gridDim, blockDim>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
 
     // copy back to host
     double *P23 = (double *)malloc(sizeof(double) * n_y * kernel_n * kernel_n_geom * 4 * 4 *4);

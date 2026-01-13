@@ -9,12 +9,12 @@
 #define T_global 40
 #define LX_global 40
 #define LY_global 40
-#define LZ_global 20 
+#define LZ_global 40 
 
 
-#define NPROCT 2
-#define NPROCX 2
-#define NPROCY 2
+#define NPROCT 1
+#define NPROCX 1
+#define NPROCY 1
 #define NPROCZ 1 
 
 const int T = T_global/NPROCT;

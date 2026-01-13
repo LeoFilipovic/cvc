@@ -712,10 +712,10 @@ void ker_2p2_pieces(
               atomicAdd_system(&P23x[ind], local_P2_1[rho][sigma][nu]);
               ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 2)*4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P3[rho][sigma][nu]);
-              ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 3)*4 + rho)*4 + sigma)*4 + nu;
+              /* ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 3)*4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P4_0[rho][sigma][nu]);
               ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 4)*4 + rho)*4 + sigma)*4 + nu;
-              atomicAdd_system(&P23x[ind], local_P4_1[rho][sigma][nu]);
+              atomicAdd_system(&P23x[ind], local_P4_1[rho][sigma][nu]); */
             }
           }
         }
