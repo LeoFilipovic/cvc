@@ -24,43 +24,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
    }
 }
 
-/* __device__ __constant__ int gamma_perm[16][24] = {
-  {12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
-  {19, 18, 21, 20, 23, 22, 13, 12, 15, 14, 17, 16, 7, 6, 9, 8, 11, 10, 1, 0, 3, 2, 5, 4},
-  {18, 19, 20, 21, 22, 23, 12, 13, 14, 15, 16, 17, 6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5},
-  {13, 12, 15, 14, 17, 16, 19, 18, 21, 20, 23, 22, 1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10},
-  {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
-  {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
-  {12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
-  {19, 18, 21, 20, 23, 22, 13, 12, 15, 14, 17, 16, 7, 6, 9, 8, 11, 10, 1, 0, 3, 2, 5, 4},
-  {18, 19, 20, 21, 22, 23, 12, 13, 14, 15, 16, 17, 6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5},
-  {13, 12, 15, 14, 17, 16, 19, 18, 21, 20, 23, 22, 1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10},
-  {7, 6, 9, 8, 11, 10, 1, 0, 3, 2, 5, 4, 19, 18, 21, 20, 23, 22, 13, 12, 15, 14, 17, 16},
-  {6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23, 12, 13, 14, 15, 16, 17},
-  {1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14, 17, 16, 19, 18, 21, 20, 23, 22},
-  {1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14, 17, 16, 19, 18, 21, 20, 23, 22},
-  {6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23, 12, 13, 14, 15, 16, 17},
-  {7, 6, 9, 8, 11, 10, 1, 0, 3, 2, 5, 4, 19, 18, 21, 20, 23, 22, 13, 12, 15, 14, 17, 16}
-};
-__device__ __constant__ int gamma_sgn[16][24] = {
-  {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
-  {+1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1},
-  {-1, -1, -1, -1, -1, -1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1},
-  {+1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1},
-  {+1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1},
-  {+1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
-  {+1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
-  {-1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1},
-  {+1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1},
-  {-1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1},
-  {+1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1},
-  {-1, -1, -1, -1, -1, -1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1},
-  {+1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1},
-  {-1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1},
-  {-1, -1, -1, -1, -1, -1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1, +1, +1, +1, +1, +1, +1},
-  {-1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1}
-}; */
-
 __device__ __constant__ int idx_comb_d[6][2] ={
     {0,1},
     {0,2},
@@ -97,13 +60,6 @@ __device__ __constant__ int idx_comb_d[6][2] ={
     (s)[18]*(t)[19] - (s)[19]*(t)[18] +\
     (s)[20]*(t)[21] - (s)[21]*(t)[20] +\
     (s)[22]*(t)[23] - (s)[23]*(t)[22];}
-
-/* __device__ inline void _fv_eq_gamma_ti_fv(double* out, int gamma_index, const double* in) {
-    #pragma unroll
-    for (int i = 0; i < 24; ++i) {
-        out[i] = in[gamma_perm[gamma_index][i]] * gamma_sgn[gamma_index][i];
-    }
-} */
 
 __device__ inline static void _fv_eq_gamma_ti_fv(double* out, int gamma_index, double* in) {
     switch (gamma_index)
@@ -216,6 +172,7 @@ __device__ inline static void _fv_eq_gamma_ti_fv(double* out, int gamma_index, d
         break;
     }
 }
+
 __device__ inline static void _fv_ti_eq_g5(double* in_out) {
     #pragma unroll
     for (int i = 12; i < 24; ++i) {
@@ -264,14 +221,6 @@ __device__ inline static void KQED_LX(int const ikernel, const double xm[4], con
         default:
             printf("Error: kernel index %d out of range (0-%d)\n", ikernel, kernel_n-1);
             break;
-    }
-}
-
-/* set a length len vector v to zero */
-__device__ void set_zero(double *v, int len) {
-    int tid = threadIdx.x + blockDim.x * blockIdx.x;
-    for (int i=tid; i<len; i+=blockDim.x*gridDim.x){
-        v[tid] = 0;
     }
 }
 
@@ -339,8 +288,8 @@ __global__ void kernel_pi(double* fwd_y, double * Pi, int iflavor, unsigned cons
 __global__ void kernel_p1(double *Pi, double *P1, int iflavor, int Lmax, int const gsw[4], unsigned const VOLUME, int const g_proc_coords[4], 
     unsigned const T, unsigned const LX, unsigned const LY, unsigned const LZ, unsigned const T_global, unsigned const LX_global, unsigned const LY_global, unsigned const LZ_global){
    //const int Lmax = T_global;
-    const int local_dim[4] = {T, LX, LY, LZ};
-    const int global_dim[4] = {T_global, LX_global, LY_global, LZ_global};
+    const int local_dim[4] = {static_cast<int>(T), static_cast<int>(LX), static_cast<int>(LY), static_cast<int>(LZ)};
+    const int global_dim[4] = {static_cast<int>(T_global), static_cast<int>(LX_global), static_cast<int>(LY_global), static_cast<int>(LZ_global)};
 
     // P1[rho][sigma][nu][z[rho]] += Pi[z][sigma][nu]
     // i.e. P1[rho][sigma][nu][i] += sum over all z with z[rho]=i of Pi[z][sigma][nu]
@@ -417,7 +366,7 @@ __device__ inline static double blockReduceSum(double val) {
     return val;
 }
 
-/* pi[volume][4][4][4], P23[n_y][kernel_n][kernel_n_geom][4][4][4] */
+/* pi[volume][4][4][4], P2/3[n_y][kernel_n][4][4][4] */
 __global__ void kernel_p23(double *pi, double *P23, int n_y, const int gsw[4], const int *gycoords, const double xunit[2],
 QED_kernel_temps kqed_t, unsigned const VOLUME, const int g_proc_coords[4], unsigned const T, unsigned const LX, unsigned const LY, unsigned const LZ, 
 unsigned const T_global, unsigned const LX_global, unsigned const LY_global, unsigned const LZ_global){
@@ -429,10 +378,10 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
         // We define y = (gsy - gsw) and use -y as input for P3.
         int const * gsy = &gycoords[4*yi];
         int const y[4] = {
-            ( gsy[0] - gsw[0] + T_global ) % T_global,
-            ( gsy[1] - gsw[1] + LX_global ) % LX_global,
-            ( gsy[2] - gsw[2] + LY_global ) % LY_global,
-            ( gsy[3] - gsw[3] + LZ_global ) % LZ_global
+            ( gsy[0] - gsw[0] + static_cast<int>(T_global) ) % static_cast<int>(T_global),
+            ( gsy[1] - gsw[1] + static_cast<int>(LX_global) ) % static_cast<int>(LX_global),
+            ( gsy[2] - gsw[2] + static_cast<int>(LY_global) ) % static_cast<int>(LY_global),
+            ( gsy[3] - gsw[3] + static_cast<int>(LZ_global) ) % static_cast<int>(LZ_global)
         };
         int yv[4];
         site_map_zerohalf ( yv, y, T_global, LX_global, LY_global, LZ_global );
@@ -458,10 +407,10 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
                             pi[ix*16 +12],pi[ix*16 +13],pi[ix*16 +14],pi[ix*16 +15]};
 
             int const x[4] = {
-            (ix / (LX * LY * LZ) - gsw[0] + g_proc_coords[0] * T + T_global) % T_global,
-            (ix / (LY * LZ) % LX - gsw[1] + g_proc_coords[1] * LX + LX_global) % LX_global,
-            ((ix / LZ) % LY - gsw[2]  + g_proc_coords[2] * LY + LY_global) % LY_global,
-            (ix % LZ - gsw[3] + g_proc_coords[3] * LZ + LZ_global) % LZ_global};
+            (ix / (static_cast<int>(LX) * static_cast<int>(LY) * static_cast<int>(LZ)) - gsw[0] + g_proc_coords[0] * static_cast<int>(T) + static_cast<int>(T_global)) % static_cast<int>(T_global),
+            (ix / (static_cast<int>(LY) * static_cast<int>(LZ)) % static_cast<int>(LX) - gsw[1] + g_proc_coords[1] * static_cast<int>(LX) + static_cast<int>(LX_global)) % static_cast<int>(LX_global),
+            ((ix / static_cast<int>(LZ)) % static_cast<int>(LY) - gsw[2]  + g_proc_coords[2] * static_cast<int>(LY) + static_cast<int>(LY_global)) % static_cast<int>(LY_global),
+            (ix % static_cast<int>(LZ) - gsw[3] + g_proc_coords[3] * static_cast<int>(LZ) + static_cast<int>(LZ_global)) % static_cast<int>(LZ_global)};
 
             int xv[4];
             site_map_zerohalf ( xv, x, T_global, LX_global, LY_global, LZ_global );
@@ -571,7 +520,7 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
     
 }
 
-__global__ void kernel_p20(double *pi, double *P23, int n_y, const int gsw[4], const int *gycoords, const double xunit[2],
+__global__ void /* __launch_bounds__(128,2) */ kernel_p20(double *pi, double *P23, int n_y, const int gsw[4], const int *gycoords, const double xunit[2],
 QED_kernel_temps kqed_t, unsigned const VOLUME, const int g_proc_coords[4], unsigned const T, unsigned const LX, unsigned const LY, unsigned const LZ, 
 unsigned const T_global, unsigned const LX_global, unsigned const LY_global, unsigned const LZ_global){
 
@@ -581,10 +530,10 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
         // We define y = (gsy - gsw) and use -y as input for P3.
         int const * gsy = &gycoords[4*yi];
         int const y[4] = {
-            ( gsy[0] - gsw[0] + T_global ) % T_global,
-            ( gsy[1] - gsw[1] + LX_global ) % LX_global,
-            ( gsy[2] - gsw[2] + LY_global ) % LY_global,
-            ( gsy[3] - gsw[3] + LZ_global ) % LZ_global
+            ( gsy[0] - gsw[0] + static_cast<int>(T_global) ) % static_cast<int>(T_global),
+            ( gsy[1] - gsw[1] + static_cast<int>(LX_global) ) % static_cast<int>(LX_global),
+            ( gsy[2] - gsw[2] + static_cast<int>(LY_global) ) % static_cast<int>(LY_global),
+            ( gsy[3] - gsw[3] + static_cast<int>(LZ_global) ) % static_cast<int>(LZ_global)
         };
         int yv[4];
         site_map_zerohalf ( yv, y, T_global, LX_global, LY_global, LZ_global );
@@ -606,10 +555,10 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
                             pi[ix*16 +12],pi[ix*16 +13],pi[ix*16 +14],pi[ix*16 +15]};
 
             int const x[4] = {
-            (ix / (LX * LY * LZ) - gsw[0] + g_proc_coords[0] * T + T_global) % T_global,
-            (ix / (LY * LZ) % LX - gsw[1] + g_proc_coords[1] * LX + LX_global) % LX_global,
-            ((ix / LZ) % LY - gsw[2]  + g_proc_coords[2] * LY + LY_global) % LY_global,
-            (ix % LZ - gsw[3] + g_proc_coords[3] * LZ + LZ_global) % LZ_global};
+            (ix / (static_cast<int>(LX) * static_cast<int>(LY) * static_cast<int>(LZ)) - gsw[0] + g_proc_coords[0] * static_cast<int>(T) + static_cast<int>(T_global)) % static_cast<int>(T_global),
+            (ix / (static_cast<int>(LY) * static_cast<int>(LZ)) % static_cast<int>(LX) - gsw[1] + g_proc_coords[1] * static_cast<int>(LX) + static_cast<int>(LX_global)) % static_cast<int>(LX_global),
+            ((ix / static_cast<int>(LZ)) % static_cast<int>(LY) - gsw[2]  + g_proc_coords[2] * static_cast<int>(LY) + static_cast<int>(LY_global)) % static_cast<int>(LY_global),
+            (ix % static_cast<int>(LZ) - gsw[3] + g_proc_coords[3] * static_cast<int>(LZ) + static_cast<int>(LZ_global)) % static_cast<int>(LZ_global)};
 
             int xv[4];
             site_map_zerohalf ( xv, x, T_global, LX_global, LY_global, LZ_global );
@@ -662,7 +611,7 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
     
 }
 
-__global__ void kernel_p21(double *pi, double *P23, int n_y, const int gsw[4], const int *gycoords, const double xunit[2],
+__global__ void /* __launch_bounds__(128,2) */ kernel_p21(double *pi, double *P23, int n_y, const int gsw[4], const int *gycoords, const double xunit[2],
 QED_kernel_temps kqed_t, unsigned const VOLUME, const int g_proc_coords[4], unsigned const T, unsigned const LX, unsigned const LY, unsigned const LZ, 
 unsigned const T_global, unsigned const LX_global, unsigned const LY_global, unsigned const LZ_global){
     //set_zero(P23, n_p23);
@@ -673,10 +622,10 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
         // We define y = (gsy - gsw) and use -y as input for P3.
         int const * gsy = &gycoords[4*yi];
         int const y[4] = {
-            ( gsy[0] - gsw[0] + T_global ) % T_global,
-            ( gsy[1] - gsw[1] + LX_global ) % LX_global,
-            ( gsy[2] - gsw[2] + LY_global ) % LY_global,
-            ( gsy[3] - gsw[3] + LZ_global ) % LZ_global
+            ( gsy[0] - gsw[0] + static_cast<int>(T_global) ) % static_cast<int>(T_global),
+            ( gsy[1] - gsw[1] + static_cast<int>(LX_global) ) % static_cast<int>(LX_global),
+            ( gsy[2] - gsw[2] + static_cast<int>(LY_global) ) % static_cast<int>(LY_global),
+            ( gsy[3] - gsw[3] + static_cast<int>(LZ_global) ) % static_cast<int>(LZ_global)
         };
         int yv[4];
         site_map_zerohalf ( yv, y, T_global, LX_global, LY_global, LZ_global );
@@ -699,10 +648,10 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
                             pi[ix*16 +12],pi[ix*16 +13],pi[ix*16 +14],pi[ix*16 +15]};
 
             int const x[4] = {
-            (ix / (LX * LY * LZ) - gsw[0] + g_proc_coords[0] * T + T_global) % T_global,
-            (ix / (LY * LZ) % LX - gsw[1] + g_proc_coords[1] * LX + LX_global) % LX_global,
-            ((ix / LZ) % LY - gsw[2]  + g_proc_coords[2] * LY + LY_global) % LY_global,
-            (ix % LZ - gsw[3] + g_proc_coords[3] * LZ + LZ_global) % LZ_global};
+            (ix / (static_cast<int>(LX) * static_cast<int>(LY) * static_cast<int>(LZ)) - gsw[0] + g_proc_coords[0] * static_cast<int>(T) + static_cast<int>(T_global)) % static_cast<int>(T_global),
+            (ix / (static_cast<int>(LY) * static_cast<int>(LZ)) % static_cast<int>(LX) - gsw[1] + g_proc_coords[1] * static_cast<int>(LX) + static_cast<int>(LX_global)) % static_cast<int>(LX_global),
+            ((ix / static_cast<int>(LZ)) % static_cast<int>(LY) - gsw[2]  + g_proc_coords[2] * static_cast<int>(LY) + static_cast<int>(LY_global)) % static_cast<int>(LY_global),
+            (ix % static_cast<int>(LZ) - gsw[3] + g_proc_coords[3] * static_cast<int>(LZ) + static_cast<int>(LZ_global)) % static_cast<int>(LZ_global)};
 
             int xv[4];
             site_map_zerohalf ( xv, x, T_global, LX_global, LY_global, LZ_global );
@@ -753,7 +702,7 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
     
 }
 
-__global__ void kernel_p3(double *pi, double *P23, int n_y, const int gsw[4], const int *gycoords, const double xunit[2],
+__global__ void /* __launch_bounds__(128,2) */ kernel_p3(double *pi, double *P23, int n_y, const int gsw[4], const int *gycoords, const double xunit[2],
 QED_kernel_temps kqed_t, unsigned const VOLUME, const int g_proc_coords[4], unsigned const T, unsigned const LX, unsigned const LY, unsigned const LZ, 
 unsigned const T_global, unsigned const LX_global, unsigned const LY_global, unsigned const LZ_global){
     //set_zero(P23, n_p23);
@@ -764,10 +713,10 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
         // We define y = (gsy - gsw) and use -y as input for P3.
         int const * gsy = &gycoords[4*yi];
         int const y[4] = {
-            ( gsy[0] - gsw[0] + T_global ) % T_global,
-            ( gsy[1] - gsw[1] + LX_global ) % LX_global,
-            ( gsy[2] - gsw[2] + LY_global ) % LY_global,
-            ( gsy[3] - gsw[3] + LZ_global ) % LZ_global
+            ( gsy[0] - gsw[0] + static_cast<int>(T_global) ) % static_cast<int>(T_global),
+            ( gsy[1] - gsw[1] + static_cast<int>(LX_global) ) % static_cast<int>(LX_global),
+            ( gsy[2] - gsw[2] + static_cast<int>(LY_global) ) % static_cast<int>(LY_global),
+            ( gsy[3] - gsw[3] + static_cast<int>(LZ_global) ) % static_cast<int>(LZ_global)
         };
         int yv[4];
         site_map_zerohalf ( yv, y, T_global, LX_global, LY_global, LZ_global );
@@ -791,10 +740,10 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
                             pi[ix*16 +12],pi[ix*16 +13],pi[ix*16 +14],pi[ix*16 +15]};
 
             int const x[4] = {
-            (ix / (LX * LY * LZ) - gsw[0] + g_proc_coords[0] * T + T_global) % T_global,
-            (ix / (LY * LZ) % LX - gsw[1] + g_proc_coords[1] * LX + LX_global) % LX_global,
-            ((ix / LZ) % LY - gsw[2]  + g_proc_coords[2] * LY + LY_global) % LY_global,
-            (ix % LZ - gsw[3] + g_proc_coords[3] * LZ + LZ_global) % LZ_global};
+            (ix / (static_cast<int>(LX) * static_cast<int>(LY) * static_cast<int>(LZ)) - gsw[0] + g_proc_coords[0] * static_cast<int>(T) + static_cast<int>(T_global)) % static_cast<int>(T_global),
+            (ix / (static_cast<int>(LY) * static_cast<int>(LZ)) % static_cast<int>(LX) - gsw[1] + g_proc_coords[1] * static_cast<int>(LX) + static_cast<int>(LX_global)) % static_cast<int>(LX_global),
+            ((ix / static_cast<int>(LZ)) % static_cast<int>(LY) - gsw[2]  + g_proc_coords[2] * static_cast<int>(LY) + static_cast<int>(LY_global)) % static_cast<int>(LY_global),
+            (ix % static_cast<int>(LZ) - gsw[3] + g_proc_coords[3] * static_cast<int>(LZ) + static_cast<int>(LZ_global)) % static_cast<int>(LZ_global)};
 
             int xv[4];
             site_map_zerohalf ( xv, x, T_global, LX_global, LY_global, LZ_global );
@@ -855,7 +804,7 @@ __host__ void compute_2p2_gpu(double *fwd_y, double *P1, double *P23, int iflavo
     double *Pi_d, *P1_d, *P23_d/* , *fwd_y_d */;
     int *gycoords_d;
     int const Lmax = get_max(T_global, LX_global, LY_global, LZ_global);
-
+    
     // Create Streams for concurrent execution
     cudaStream_t /* stream_p23,  */stream_p1, stream_p20, stream_p21, stream_p3;
     cudaStreamCreate(&stream_p20);
@@ -864,13 +813,11 @@ __host__ void compute_2p2_gpu(double *fwd_y, double *P1, double *P23, int iflavo
     cudaStreamCreate(&stream_p1);
 
     // Allocation
-    size_t size_pi = 4 * 4 * VOLUME;
-    size_t size_fwd = 2 * 12 * 24 * VOLUME;
-    size_t size_p23 = n_y * kernel_n * kernel_n_geom * 4 * 4 * 4;
-    size_t size_p1  = 4 * 4 * 4 * Lmax;
+    size_t const size_pi = 4 * 4 * VOLUME;
+    size_t const size_p23 = n_y * kernel_n * kernel_n_geom * 4 * 4 * 4;
+    size_t const size_p1  = 4 * 4 * 4 * Lmax;
 
     check(cudaMalloc((void **)&Pi_d, size_pi * sizeof(double)));
-    //check(cudaMalloc((void **)&fwd_y_d, size_fwd * sizeof(double)));s
     check(cudaMalloc((void **)&P23_d, size_p23 * sizeof(double)));
     check(cudaMalloc((void **)&P1_d, size_p1 * sizeof(double)));
     check(cudaMalloc((void **)&gycoords_d, sizeof(int) * 4 * n_y));
@@ -895,65 +842,83 @@ __host__ void compute_2p2_gpu(double *fwd_y, double *P1, double *P23, int iflavo
     cudaDeviceSynchronize(); // Force check
 
     /* --- 3. CONCURRENT KERNEL LAUNCH --- */
+
     
     // --- Stream x3: P23 ---
     dim3 gridP23(88, 3);
     dim3 blockP23(256);
-    //kernel_p23<<<gridP23, blockP23, 0, stream_p23>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
-    //cudaMemcpyAsync(P23, P23_d, size_p23 * sizeof(double), cudaMemcpyDeviceToHost, stream_p23);
     kernel_p20<<<gridP23, blockP23, 0, stream_p20>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
     kernel_p21<<<gridP23, blockP23, 0, stream_p21>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
     kernel_p3<<<gridP23, blockP23, 0, stream_p3>>>(Pi_d,P23_d,n_y,gsw ,gycoords_d,xunit,kqed_t,VOLUME,g_proc_coords,T,LX ,LY,LZ,T_global,LX_global ,LY_global,LZ_global);
+    cudaMemcpyAsync(P23, P23_d, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p20);
+    cudaMemcpyAsync(P23 + size_p23/3, P23_d + size_p23/3, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p21);
+    cudaMemcpyAsync(P23 + 2*size_p23/3, P23_d + 2*size_p23/3, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p3);    
 
-    // --- Stream x1: P1 ---
+        // --- Stream x1: P1 ---
     dim3 gridP1(4, 4, 4);
     dim3 blockP1(128);
     kernel_p1<<<gridP1, blockP1, 0, stream_p1>>>(Pi_d, P1_d, iflavor, Lmax, gsw, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
-    //kernel_p1<<<gridP1, blockP1>>>(Pi_d, P1_d, iflavor, gsw, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
-    cudaMemcpyAsync(P23, P23_d, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p20);
-    cudaMemcpyAsync(P23 + size_p23/3, P23_d + size_p23/3, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p21);
-    cudaMemcpyAsync(P23 + 2 * size_p23/3, P23_d + 2 * size_p23/3, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p3);
     cudaMemcpyAsync(P1, P1_d, size_p1 * sizeof(double), cudaMemcpyDeviceToHost, stream_p1);
 
-    /* --- 4. CUDA-AWARE MPI REDUCTION --- */
-    MPI_Request request[4];
 
-    // Wait for P1 Kernel to finish, then start its MPI
-    cudaStreamSynchronize(stream_p1);
-    if (MPI_Iallreduce(MPI_IN_PLACE, (void *)P1, size_p1, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[0]) != MPI_SUCCESS) {
-        fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
-        MPI_Abort(g_cart_grid, -1);
-    }
+    /* --- 4. MPI REDUCTION --- */
+    MPI_Request request[4];    
 
-    // Wait for P23 Kernel to finish, then start its MPI
     cudaStreamSynchronize(stream_p20);
-    if(MPI_Iallreduce(MPI_IN_PLACE, (void *)P23, size_p23/3, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[1]) != MPI_SUCCESS) {
+    if(MPI_Iallreduce(MPI_IN_PLACE, P23, size_p23/3, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[0]) != MPI_SUCCESS) {
         fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
         MPI_Abort(g_cart_grid, -1);
     }
 
     cudaStreamSynchronize(stream_p21);
-    if(MPI_Iallreduce(MPI_IN_PLACE, P23+size_p23/3, size_p23/3, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[2]) != MPI_SUCCESS) {
+    if(MPI_Iallreduce(MPI_IN_PLACE, P23+size_p23/3, size_p23/3, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[1]) != MPI_SUCCESS) {
         fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
         MPI_Abort(g_cart_grid, -1);
     }
 
     cudaStreamSynchronize(stream_p3);
-    if(MPI_Iallreduce(MPI_IN_PLACE, P23+2*size_p23/3, size_p23/3, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[3]) != MPI_SUCCESS) {
+    if(MPI_Iallreduce(MPI_IN_PLACE, P23+2*size_p23/3, size_p23/3, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[2]) != MPI_SUCCESS) {
         fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
         MPI_Abort(g_cart_grid, -1);
     }
 
+    cudaStreamSynchronize(stream_p1);
+    if(MPI_Iallreduce(MPI_IN_PLACE, P1, size_p1, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[3]) != MPI_SUCCESS) {
+        fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
+        MPI_Abort(g_cart_grid, -1);
+    }
+    
+    /* if(MPI_Iallreduce(MPI_IN_PLACE, P23_d, size_p23, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[0]) != MPI_SUCCESS) {
+        fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
+        MPI_Abort(g_cart_grid, -1);
+    } */
+
+
+    /* if(MPI_Iallreduce(MPI_IN_PLACE, P1_d, size_p1, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[1]) != MPI_SUCCESS) {
+        fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
+        MPI_Abort(g_cart_grid, -1);
+    } */
+
     /* --- 5. CLEANUP --- */
     // Wait for network to finish
+    /* MPI_Wait(&request[3], MPI_STATUS_IGNORE);
+    cudaMemcpyAsync(P1, P1_d, size_p1 * sizeof(double), cudaMemcpyDeviceToHost, stream_p1);
+
+    MPI_Wait(&request[0], MPI_STATUSES_IGNORE);
+    cudaMemcpyAsync(P23, P23_d, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p20);
+
+    MPI_Wait(&request[1], MPI_STATUSES_IGNORE);
+    cudaMemcpyAsync(P23 + size_p23/3, P23_d + size_p23/3, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p21);
+
+    MPI_Wait(&request[2], MPI_STATUSES_IGNORE);
+    cudaMemcpyAsync(P23 + 2*size_p23/3, P23_d + 2*size_p23/3, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p3);
+ */
     MPI_Waitall(4, request, MPI_STATUSES_IGNORE);
 
     cudaFree(Pi_d);
-    //cudaFree(fwd_y_d);
     cudaFree(P23_d);
     cudaFree(P1_d);
     cudaFree(gycoords_d);
-    //cudaStreamDestroy(stream_p23);
     cudaStreamDestroy(stream_p1);
     cudaStreamDestroy(stream_p20);
     cudaStreamDestroy(stream_p21);

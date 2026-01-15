@@ -1960,24 +1960,27 @@ int main(int argc, char **argv) {
          ***********************************************************/
         const int Lmax = get_Lmax();
         //double ***** P1 = init_5level_dtable ( 1, 4, 4, 4, Lmax );
-        double *P1 = (double *) malloc(4 * 4 * 4 * Lmax * sizeof(double));
-        if ( P1 == NULL )
+        double *P1;// 
+        cudaHostAlloc((void **)&P1, 4 * 4 * 4 * Lmax * sizeof(double), cudaHostAllocDefault);
+        /* if ( P1 == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
           EXIT(123);
-        }
+        } */
 
 	      /***********************************************************
          * P2/3/x_{rho,sigma,nu}
          ***********************************************************/
         //double ****** P23x = init_6level_dtable ( n_yp, kernel_n*kernel_n_geom, 1, 4, 4, 4 );
-        double *P23x = (double *) malloc(n_yp *  kernel_n * kernel_n_geom * 4 * 4 * 4 * sizeof(double));
+        //double *P23x = (double *) malloc(n_yp *  kernel_n * kernel_n_geom * 4 * 4 * 4 * sizeof(double));
+        double *P23x;
+        cudaHostAlloc((void **)&P23x, n_yp *  kernel_n * kernel_n_geom * 4 * 4 * 4 * sizeof(double), cudaHostAllocDefault);
         
-        if ( P23x == NULL )
+        /* if ( P23x == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
           EXIT(123);
-        }
+        } */
 
         /**********************************************************
          * compute P1, P2, P3, ...
@@ -2045,8 +2048,8 @@ int main(int argc, char **argv) {
         }
         //fini_5level_dtable ( &P1 );
         //fini_6level_dtable( &P23x );
-        free(P1);
-        free(P23x);
+        cudaFreeHost(P1);
+        cudaFreeHost(P23x);
         }
       } /* end of P1, P2, P3, ... */
       

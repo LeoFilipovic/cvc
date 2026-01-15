@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
                 for (int ib=0; ib<24; ib++)
                     fwd_y_tmp[ifl * 12 * 24 * VOL + x * 12 * 24 + ia * 24 + ib] = fwd_y[ifl * 12 * 24 * VOL + ia * 24 + x * 24 + ib];
  */
-    const int n_y = 2000;
+    const int n_y = 88;
     const int gsw[4] = {1,1,1,1};
     int *gycoords = (int *)malloc(sizeof(int) * 4 * n_y);
     for (int i=0; i<n_y; i++){
@@ -93,8 +93,10 @@ int main(int argc, char **argv) {
     const double xunit[2] = {0.1,0.2};
     
     //allocate P1, P23 
-    double *P1 = (double *)malloc(sizeof(double) * 4 * 4 * 4 * T_global);
-    double *P23 = (double *)malloc(sizeof(double) * n_y * kernel_n * kernel_n_geom * 4 * 4 *4);
+    double *P1; // = (double *)malloc(sizeof(double) * 4 * 4 * 4 * T_global);
+    double *P23; // = (double *)malloc(sizeof(double) * n_y * kernel_n * kernel_n_geom * 4 * 4 *4);
+    cudaHostAlloc((void**)&P1, 64 * T_global * sizeof(double), cudaHostAllocDefault);
+    cudaHostAlloc((void**)&P23, 64 * n_y * kernel_n * kernel_n_geom * sizeof(double), cudaHostAllocDefault);
     struct QED_kernel_temps kqed_t;
     initialise(&kqed_t);
     //compute_2p2_gpu(fwd_y, P1, P23, 0, gsw, gycoords, n_y, xunit, kqed_t, VOL, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
@@ -123,6 +125,12 @@ int main(int argc, char **argv) {
             fclose(file1);
         }
     } */
+
+    cudaFreeHost(P1);
+    cudaFreeHost(P23);
+    free(gycoords);
+    free(Pi);
+    free(fwd_y);
     MPI_Finalize();
     return 0;
 }
