@@ -243,7 +243,7 @@ inline void integrate_p1_0(double * pimn, double *P1, int iflavor, int const * g
 
 /* rerarrange the summation order to z, rho, sigma, nu
    note that input pi[x][mu][nu] is different P1[rho][sigma][nu][z] is unchanged */
-inline void integrate_p1(double *Pi, double *P1, int iflavor,  int const * gsw, unsigned VOLUME) 
+inline void integrate_p1(double const *Pi, double *P1, int iflavor,  int const * gsw, unsigned VOLUME) 
 {
   const int Lmax = T_global; // T will be the largest dimension
   const int n_P1 = 4 * 4 * 4 * Lmax;
@@ -404,19 +404,16 @@ QED_kernel_temps kqed_t, unsigned VOLUME){
 }
 
 /* optimised compute_p23: loop rearrangement */
-inline void compute_p23(double *pi, double (*P23)[kernel_n*kernel_n_geom][4][4][4], const int *gsw, int n_y, const int *gycoords, const double xunit[2],
+inline void compute_p23(double const *pi, double *P23, const int *gsw, int n_y, const int *gycoords, const double xunit[2],
 QED_kernel_temps kqed_t, unsigned VOLUME){
   /* #if kernel_n_geom != 5
   #error "Number of QED kernel geometries does not match implementation"
   #endif */
   /* clear P23 */
-  #pragma omp parallel for collapse(5)
-  for (int y=0; y<n_y; y++)
-  for (int k=0; k<kernel_n*kernel_n_geom; k++)
-  for (int r=0; r<4; r++)
-  for (int s=0; s<4; s++)
-  for (int n=0; n<4; n++){
-    P23[y][k][r][s][n] = 0.;
+  int const n_p23 = n_y * kernel_n * kernel_n_geom * 4 * 4 * 4;
+  #pragma omp parallel for
+  for (int i=0; i<n_p23; i++){
+    P23[i] = 0.;
   }
 
   #pragma omp parallel for
@@ -450,58 +447,46 @@ QED_kernel_temps kqed_t, unsigned VOLUME){
       -yv[2] * xunit[0],
       -yv[3] * xunit[0] };
 
-    for ( unsigned int ix = 0; ix < VOLUME; ix++ ){
-      /* int const x[4] = {
-        ( g_lexic2coords[ix][0] + g_proc_coords[0] * T  - gsw[0] + T_global  ) % T_global,
-        ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
-        ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
-        ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global }; */
-      int const x[4] = {(ix / (LX * LY * LZ)  + g_proc_coords[0] * T - gsw[0] + T_global) % T_global,
-      (ix / (LY * LZ) % LX + g_proc_coords[1] * LX - gsw[1] + LX_global) % LX_global,
-      ((ix / LZ) % LY + g_proc_coords[2] * LY - gsw[2] + LY_global) % LY_global,
-      (ix % LZ + g_proc_coords[3] * LZ - gsw[3] + LZ_global) % LZ_global};
+    for ( int ikernel = 0; ikernel < kernel_n; ikernel++ ){
+      /* a different local copy of P2/3 for each kernel */
+      double local_p2_0[64]={0};
+      double local_p2_1[64]={0};
+      double local_p3[64]={0};
+      for ( unsigned int ix = 0; ix < VOLUME; ix++ ){
+        /* int const x[4] = {
+          ( g_lexic2coords[ix][0] + g_proc_coords[0] * T  - gsw[0] + T_global  ) % T_global,
+          ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
+          ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
+          ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global }; */
+        int const x[4] = {(ix / (LX * LY * LZ)  + g_proc_coords[0] * T - gsw[0] + T_global) % T_global,
+        (ix / (LY * LZ) % LX + g_proc_coords[1] * LX - gsw[1] + LX_global) % LX_global,
+        ((ix / LZ) % LY + g_proc_coords[2] * LY - gsw[2] + LY_global) % LY_global,
+        (ix % LZ + g_proc_coords[3] * LZ - gsw[3] + LZ_global) % LZ_global};
 
-      int xv[4];
-      site_map_zerohalf ( xv, x );
+        int xv[4];
+        site_map_zerohalf ( xv, x );
 
-      const double pix[16] = {pi[ix*16 +0], pi[ix*16 +1], pi[ix*16 +2], pi[ix*16 +3],
-                        pi[ix*16 +4], pi[ix*16 +5], pi[ix*16 +6], pi[ix*16 +7],
-                        pi[ix*16 +8], pi[ix*16 +9], pi[ix*16 +10],pi[ix*16 +11],
-                        pi[ix*16 +12],pi[ix*16 +13],pi[ix*16 +14],pi[ix*16 +15]};
-      /* double *pix = pi + ix*16; */
-      double const xm[4] = {
-        xv[0] * xunit[0],
-        xv[1] * xunit[0],
-        xv[2] * xunit[0],
-        xv[3] * xunit[0] };
+        const double pix[16] = {pi[ix*16 +0], pi[ix*16 +1], pi[ix*16 +2], pi[ix*16 +3],
+                          pi[ix*16 +4], pi[ix*16 +5], pi[ix*16 +6], pi[ix*16 +7],
+                          pi[ix*16 +8], pi[ix*16 +9], pi[ix*16 +10],pi[ix*16 +11],
+                          pi[ix*16 +12],pi[ix*16 +13],pi[ix*16 +14],pi[ix*16 +15]};
+        /* double *pix = pi + ix*16; */
+        double const xm[4] = {
+          xv[0] * xunit[0],
+          xv[1] * xunit[0],
+          xv[2] * xunit[0],
+          xv[3] * xunit[0] };
 
-      double const xm_minus[4] = {
-        -xv[0] * xunit[0],
-        -xv[1] * xunit[0],
-        -xv[2] * xunit[0],
-        -xv[3] * xunit[0] };
+        double const xm_mi_ym[4] = {
+          xm[0] - ym[0],
+          xm[1] - ym[1],
+          xm[2] - ym[2],
+          xm[3] - ym[3] };
 
-      double const xm_mi_ym[4] = {
-        xm[0] - ym[0],
-        xm[1] - ym[1],
-        xm[2] - ym[2],
-        xm[3] - ym[3] };
-      double const ym_mi_xm[4] = {
-        ym[0] - xm[0],
-        ym[1] - xm[1],
-        ym[2] - xm[2],
-        ym[3] - xm[3] };
-
-      for ( int ikernel = 0; ikernel < kernel_n; ikernel++ ){
+      
         KQED_LX[ikernel]( xm, ym,             kqed_t, kerv1 );
         KQED_LX[ikernel]( ym, xm,             kqed_t, kerv2 );
         KQED_LX[ikernel]( xm_mi_ym, ym_minus, kqed_t, kerv3 );
-        //KQED_LX[ikernel]( ym_mi_xm, xm_minus, kqed_t, kerv4 );
-
-        /* a different local copy of P2/3 for each kernel */
-        double local_p2_0[64]={0};
-        double local_p2_1[64]={0};
-        double local_p3[64]={0};
         
         /* P2_0 unroll k (too much register pressure)*/
         for (int mu=0; mu<4; mu++)
@@ -523,66 +508,70 @@ QED_kernel_temps kqed_t, unsigned VOLUME){
         for (int mu=0; mu<4; mu++)
         for (int nu=0; nu<4; nu++)
         for (int lambda=0; lambda<4; lambda++){
-            // k=2: {0,3}
-            local_p2_0[0*16 + 3*4 + nu] += kerv1[2][mu][nu][lambda] * pix[mu*4 +lambda];
-            local_p2_1[0*16 + 3*4 + nu] += kerv2[2][nu][mu][lambda] * pix[mu*4+lambda];
-            local_p3[0*16 + 3*4 + nu] += kerv3[2][mu][lambda][nu] * pix[mu*4+lambda];
+          // k=2: {0,3}
+          local_p2_0[0*16 + 3*4 + nu] += kerv1[2][mu][nu][lambda] * pix[mu*4 +lambda];
+          local_p2_1[0*16 + 3*4 + nu] += kerv2[2][nu][mu][lambda] * pix[mu*4+lambda];
+          local_p3[0*16 + 3*4 + nu] += kerv3[2][mu][lambda][nu] * pix[mu*4+lambda];
         }
         for (int mu=0; mu<4; mu++)
         for (int nu=0; nu<4; nu++)
         for (int lambda=0; lambda<4; lambda++){
-            // k=3: {1,2}
-            local_p2_0[1*16 + 2*4 + nu] += kerv1[3][mu][nu][lambda] * pix[mu*4 +lambda];
-            local_p2_1[1*16 + 2*4 + nu] += kerv2[3][nu][mu][lambda] * pix[mu*4+lambda];
-            local_p3[1*16 + 2*4 + nu] += kerv3[3][mu][lambda][nu] * pix[mu*4+lambda];
+          // k=3: {1,2}
+          local_p2_0[1*16 + 2*4 + nu] += kerv1[3][mu][nu][lambda] * pix[mu*4 +lambda];
+          local_p2_1[1*16 + 2*4 + nu] += kerv2[3][nu][mu][lambda] * pix[mu*4+lambda];
+          local_p3[1*16 + 2*4 + nu] += kerv3[3][mu][lambda][nu] * pix[mu*4+lambda];
         }
         for (int mu=0; mu<4; mu++)
         for (int nu=0; nu<4; nu++)
         for (int lambda=0; lambda<4; lambda++){
-            // k=4: {1,3}
-            local_p2_0[1*16 + 3*4 + nu] += kerv1[4][mu][nu][lambda] * pix[mu*4 +lambda];
-            local_p2_1[1*16 + 3*4 + nu] += kerv2[4][nu][mu][lambda] * pix[mu*4+lambda];
-            local_p3[1*16 + 3*4 + nu] += kerv3[4][mu][lambda][nu] * pix[mu*4+lambda];
+          // k=4: {1,3}
+          local_p2_0[1*16 + 3*4 + nu] += kerv1[4][mu][nu][lambda] * pix[mu*4 +lambda];
+          local_p2_1[1*16 + 3*4 + nu] += kerv2[4][nu][mu][lambda] * pix[mu*4+lambda];
+          local_p3[1*16 + 3*4 + nu] += kerv3[4][mu][lambda][nu] * pix[mu*4+lambda];
         }
         for (int mu=0; mu<4; mu++)
         for (int nu=0; nu<4; nu++)
         for (int lambda=0; lambda<4; lambda++){
-            // k=5: {2,3}
-            local_p2_0[2*16 + 3*4 + nu] += kerv1[5][mu][nu][lambda] * pix[mu*4 +lambda];
-            local_p2_1[2*16 + 3*4 + nu] += kerv2[5][nu][mu][lambda] * pix[mu*4+lambda];
-            local_p3[2*16 + 3*4 + nu] += kerv3[5][mu][lambda][nu] * pix[mu*4+lambda];
-        }
-
-
-        /* Accumulate to global P23 */
-        for (int rho=0; rho<4; rho++)
-        for (int sigma=0; sigma<4; sigma++)
-        for (int nu=0; nu<4; nu++){
-          P23[yi][ikernel * kernel_n_geom + 0][rho][sigma][nu] += local_p2_0[rho*16 + sigma*4 + nu];
-          P23[yi][ikernel * kernel_n_geom + 1][rho][sigma][nu] += local_p2_1[rho*16 + sigma*4 + nu];
-          P23[yi][ikernel * kernel_n_geom + 2][rho][sigma][nu] += local_p3[rho*16 + sigma*4 + nu];
+          // k=5: {2,3}
+          local_p2_0[2*16 + 3*4 + nu] += kerv1[5][mu][nu][lambda] * pix[mu*4 +lambda];
+          local_p2_1[2*16 + 3*4 + nu] += kerv2[5][nu][mu][lambda] * pix[mu*4+lambda];
+          local_p3[2*16 + 3*4 + nu] += kerv3[5][mu][lambda][nu] * pix[mu*4+lambda];
         }
       }
+          
+      /* Accumulate to global P23 */
+      double *P23y = P23 + yi * (kernel_n * kernel_n_geom * 4 * 4 *4) + ikernel * (kernel_n_geom * 4 *4 *4);
+      #pragma unroll
+      for (int i=0; i<64; i++) P23y[i] = local_p2_0[i];
+      #pragma unroll
+      for (int i=0; i<64; i++) P23y[64 + i] = local_p2_1[i];
+      #pragma unroll
+      for (int i=0; i<64; i++) P23y[128 + i] = local_p3[i];
     }
   }
-  /* for (int yi=0; yi<n_y; yi++)
-  for (int ikernel=0; ikernel<kernel_n; ikernel++)
-  for( int k = 0; k < 6; k++ ){
-    const int rho   = idx_comb[k][0];
-    const int sigma = idx_comb[k][1];
-    for ( int nu = 0; nu < 4; nu++ ){
-      P23[yi][ikernel * kernel_n_geom + 4][rho][sigma][nu] += (yv[rho]-xv[rho]) * P23[yi][ikernel * kernel_n_geom + 3][rho][sigma][nu];
-      P23[yi][ikernel * kernel_n_geom + 4][sigma][rho][nu] += (yv[sigma]-xv[sigma]) * (-P23[yi][ikernel * kernel_n_geom + 3][rho][sigma][nu]);
-    }
-  } */
-
-  //all reduce
-  //allreduce(&P23[0][0][0][0][0], n_y*kernel_n*kernel_n_geom*64);
 }
 
+void compute_2p2_cpu(double *** fwd_y, double *P1, double *P23, int const* gsw, int iflavor, int n_y, const int * gycoords,
+    const double xunit[2], QED_kernel_temps kqed_t, unsigned VOLUME)
+{
+  double * pi = (double *)calloc(16 * VOLUME, sizeof(double));
+  int const n_p1 = 4 * 4 * 4 * get_Lmax();
+  int const n_p23 = n_y * kernel_n * kernel_n_geom * 4 * 4 * 4;
 
+  compute_pi(fwd_y, pi, iflavor, VOLUME);
 
+  MPI_Request reqs[2];
 
+  integrate_p1(pi, P1, iflavor, gsw, VOLUME);
+  MPI_Iallreduce(MPI_IN_PLACE, P1, n_p1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD, &reqs[0]);
+
+  compute_p23(pi, P23, gsw, n_y, gycoords, xunit, kqed_t, VOLUME);
+  MPI_Iallreduce(MPI_IN_PLACE, P23, n_p23, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD, &reqs[1]);
+
+  free(pi);
+
+  MPI_Waitall(2, reqs, MPI_STATUSES_IGNORE);
+}
 
 /* check correctness openmp and mpi*/
 void check_Pi(size_t vol) {
@@ -681,8 +670,9 @@ void check_integral(size_t vol, int w0, int w1, int w2, int w3) {
 void check_p23(unsigned vol, const int* gsw, int n_y, const int *gycoords, const double xunit[2]) {
   double *pi = (double *)calloc(16 * vol, sizeof(double));
   double *pi_rearrange = (double *)calloc(16 * vol, sizeof(double));
+  int const n_p23 = n_y * kernel_n * kernel_n_geom * 4 * 4 * 4;
   double (*P23)[kernel_n*kernel_n_geom][4][4][4] = (double (*)[kernel_n*kernel_n_geom][4][4][4]) calloc(n_y, sizeof(*P23));
-  double (*P23_new)[kernel_n*kernel_n_geom][4][4][4] = (double (*)[kernel_n*kernel_n_geom][4][4][4]) malloc(sizeof(*P23_new) * n_y);
+  double *P23_new = (double *) malloc(sizeof(*P23_new) * n_p23);
   for (int i=0; i<16*vol; i++){
     pi[i] = rand() * 2. / RAND_MAX - 1; // a random number between -1 and 1
   }
@@ -707,11 +697,11 @@ void check_p23(unsigned vol, const int* gsw, int n_y, const int *gycoords, const
   for (int rho=0; rho<4; rho++)
   for (int mu=0; mu<4; mu++)
   for (int nu=0; nu<4; nu++){
-    const double diff = P23[x][ikernel * kernel_n_geom + g][rho][mu][nu] - P23_new[x][ikernel * kernel_n_geom + g][rho][mu][nu];
+    const double diff = P23[x][ikernel * kernel_n_geom + g][rho][mu][nu] - P23_new[x * (kernel_n * kernel_n_geom * 4 *4 *4) + ikernel * (kernel_n_geom *4 *4 *4) + g * (4*4*4) + rho * (4*4) + mu *4 + nu];
     if (diff * diff > 1e-26) {
       flag=1;
       printf("P23 difference at [%d][%d][%d][%d][%d][%d]: %f VS %f diff=%e\n.",
-         x, ikernel, g, rho, mu, nu, P23[x][ikernel * kernel_n_geom + g][rho][mu][nu], P23_new[x][ikernel * kernel_n_geom + g][rho][mu][nu], diff);
+         x, ikernel, g, rho, mu, nu, P23[x][ikernel * kernel_n_geom + g][rho][mu][nu], P23_new[x * (kernel_n * kernel_n_geom * 4 *4 *4) + ikernel * (kernel_n_geom *4 *4 *4) + g * (4*4*4) + rho * (4*4) + mu *4 + nu], diff);
     }
     /* printf("Integral difference at [%d][%d][%d][%d][%d][%d]: %f VS %f diff=%e\n.",
          x, ikernel, g, rho, mu, nu, P23[x][ikernel * kernel_n_geom + g][rho][mu][nu], P23_new[x][ikernel * kernel_n_geom + g][rho][mu][nu], diff);
@@ -838,7 +828,8 @@ void check_P23_cuda() {
   srand(1234);
   for (int i=0; i< 16 * vol; i++) Pi[i] = rand()*2./RAND_MAX - 1.;
 
-  double (*P23)[kernel_n*kernel_n_geom][4][4][4] = (double (*)[kernel_n*kernel_n_geom][4][4][4]) malloc(sizeof(*P23) * n_y);
+  int const n_p23 = n_y * kernel_n * kernel_n_geom * 4 * 4 * 4;
+  double *P23 = (double *) malloc(sizeof(double) * n_p23);
 
   struct QED_kernel_temps kqed_t_new ;
   initialise(&kqed_t_new);
@@ -846,30 +837,22 @@ void check_P23_cuda() {
   compute_p23(Pi, P23, gsw, n_y, gycoords, xunit, kqed_t_new, vol);
 
   // read from p23_cuda.dat
-  double (*P23_cuda)[kernel_n*kernel_n_geom][4][4][4] = (double (*)[kernel_n*kernel_n_geom][4][4][4]) malloc(sizeof(*P23_cuda) * n_y);
+  double *P23_cuda = (double *) malloc(sizeof(double) * n_p23);
   FILE *fp = fopen("p23_cuda.dat", "r");
-  for (int i=0; i<n_y; i++)
-  for (int j=0; j<kernel_n*kernel_n_geom; j++)
-  for (int r=0; r<4; r++)
-  for (int s=0; s<4; s++)
-  for (int n=0; n<4; n++){
-    fscanf(fp, "%lf", &P23_cuda[i][j][r][s][n]);
+  for (int i=0; i<n_p23; i++) {
+    fscanf(fp, "%lf", &P23_cuda[i]);
   }
   fclose(fp);
 
   // compare P23 and P23_cuda
   int flag = 0;
-  for (int i=0; i<n_y; i++)
-  for (int j=0; j<kernel_n*kernel_n_geom; j++)
-  for (int r=0; r<4; r++)
-  for (int s=0; s<4; s++)
-  for (int n=0; n<4; n++){
-    const double p0 = P23[i][j][r][s][n];;
-    const double p1 = P23_cuda[i][j][r][s][n];
+  for (int i=0; i<n_p23; i++) {
+    const double p0 = P23[i];
+    const double p1 = P23_cuda[i];
     const double diff = p0 - p1;
     if (diff * diff > 1e-18) {
       flag=1;
-      printf("P23 difference at [%d][%d][%d][%d][%d], %.10f VS %.10f\n.", i, j, r, s, n, p0, p1);
+      printf("P23 difference at [%d], %.10f VS %.10f\n.", i, p0, p1);
     }
   }
   if (flag) printf("P23 correctnenss FAILED.\n");

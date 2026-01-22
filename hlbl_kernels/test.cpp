@@ -1,6 +1,8 @@
 #include "cvc_linalg.h"
 #include "kernels.h"
-//#include "global.h"
+#include "global.h"
+
+#define ny 20 
 
 int main ( int argc, char **argv )
 {
@@ -63,29 +65,33 @@ int main ( int argc, char **argv )
   /* integrate_p1_1(p1_1, P1, 0, src, VOLUME); */
 
   const int y[4] = {1, 1, 1, 1};
-  int y_coord[80];
-  for (int i=0; i<20; i++) {
+  int y_coord[4 * ny];
+  for (int i=0; i<ny; i++) {
     y_coord[i*4 + 0] = i * y[0];
     y_coord[i*4 + 1] = i * y[1];
     y_coord[i*4 + 2] = i * y[2];
     y_coord[i*4 + 3] = i * y[3];
   }
   const double xunit[2] = {1.0, 2.1};
-  double (*P23)[kernel_n*kernel_n_geom][4][4][4] = (double (*)[kernel_n*kernel_n_geom][4][4][4]) malloc(sizeof(*P23) * 20);
+  int const n_p23 = ny * kernel_n * kernel_n_geom * 4 * 4 * 4;
+  double *P23 = (double *) malloc(sizeof(double) * n_p23);
   /* fill p1_1 with test data */
   for (int i=0; i<16*VOLUME; i++){
     p1_1[i] = rand() * 2. / RAND_MAX - 1; // a random number between -1 and 1
   }
   struct QED_kernel_temps kqed_t ;
   initialise(&kqed_t);
-  //compute_p23_0(p1_1, P23, src, 20, (const int *)y_coord, xunit, VOLUME);
-  //compute_p23(p1_1, P23, src, 20, (const int *)y_coord, xunit, kqed_t, VOLUME);
+  //compute_p23_0(p1_1, P23, src, ny, (const int *)y_coord, xunit, VOLUME);
+  //compute_p23(p1_1, P23, src, ny, (const int *)y_coord, xunit, kqed_t, VOLUME);
+
+  compute_2p2_cpu(fwd_y, p1_1, P23, src, 0, ny, (const int *)y_coord, xunit, kqed_t, VOLUME);
+
   
   //check_Pi(VOLUME);
   //check_integral(VOLUME, src[0], src[1], src[2], src[3]);
-  //check_p23(VOLUME, src, 2, (const int *)y_coord, xunit);
+  //check_p23(VOLUME, src, ny, (const int *)y_coord, xunit);
 
-  check_Pi_cuda();
+  //check_Pi_cuda();
   //check_P1_cuda();
   //check_P23_cuda();
 
