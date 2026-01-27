@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
                 for (int ib=0; ib<24; ib++)
                     fwd_y_tmp[ifl * 12 * 24 * VOL + x * 12 * 24 + ia * 24 + ib] = fwd_y[ifl * 12 * 24 * VOL + ia * 24 + x * 24 + ib];
  */
-    const int n_y = 88;
+    const int n_y = 80;
     const int gsw[4] = {1,1,1,1};
     int *gycoords = (int *)malloc(sizeof(int) * 4 * n_y);
     for (int i=0; i<n_y; i++){

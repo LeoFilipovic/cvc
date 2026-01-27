@@ -24,7 +24,7 @@ sys     0m0.021s
 -- remove loop over spinor index, explicity blockDim for kernel launch 
 -- "switch" gamma application, remove gamma_permutation, gamma_sign
 -- "switch" KQED_LX
-2. UNABLE TO FIX: KQED_LX returns [6][4][4][4] output that requires > 255 registers, limited latency bound, ~ 16% compute only  
+2. UNABLE TO FIX: KQED_LX returns [6][4][4][4] output that requires > 255 registers, limited latency bound, ~ 20% compute only  
 
 ptxas info    : Compiling entry function '_Z10kernel_p23PdS_iPKiS1_PKd16QED_kernel_tempsjS1_jjjjjjjj' for 'sm_90'
 ptxas info    : Function properties for _Z10kernel_p23PdS_iPKiS1_PKd16QED_kernel_tempsjS1_jjjjjjjj
@@ -577,3 +577,11 @@ MPI cartesian dimension 0x0x0x0
           cycles. Maximum instance value is 15.00% above the average, while the minimum instance value is 15.38% below  
           the average.                                                                                                  
 
+
+
+scaling with n_yp
+44    0m14.768s
+88    0m26.502s
+176   0m49.805s
+352   1m31.957s
+604   2m39.567s
