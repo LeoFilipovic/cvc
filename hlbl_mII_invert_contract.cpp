@@ -65,6 +65,8 @@ extern "C"
 #include "clover.h"
 #include "scalar_products.h"
 
+//#include "hlbl_kernels/kernels.h"
+
 #define _OP_ID_UP 0
 #define _OP_ID_DN 1
 
@@ -1955,28 +1957,30 @@ int main(int argc, char **argv) {
         {
         int n_yp = g_source_pair_targets_number[ipair];
         const int * gyp = (const int*) g_source_pair_targets_list[ipair];
+    
+        const int Lmax = get_Lmax();              
         /***********************************************************
          * P1_{rho,sigma,nu}
          ***********************************************************/
-        const int Lmax = get_Lmax();
-        //double ***** P1 = init_5level_dtable ( 1, 4, 4, 4, Lmax );
-        double *P1;// 
+	      /***********************************************************
+         * P2/3/x_{rho,sigma,nu}
+         ***********************************************************/
+#ifdef HAVE_CUDA
+        double *P1; 
         cudaHostAlloc((void **)&P1, 4 * 4 * 4 * Lmax * sizeof(double), cudaHostAllocDefault);
-        /* if ( P1 == NULL )
+        double *P23x;
+        cudaHostAlloc((void **)&P23x, n_yp *  kernel_n * kernel_n_geom * 4 * 4 * 4 * sizeof(double), cudaHostAllocDefault);
+#else
+        P23x = (double *)calloc(n_yp *  kernel_n * kernel_n_geom * 4 * 4 * 4, sizeof(double));
+        P1 = (double *)calloc(4 * 4 * 4 * Lmax, sizeof(double));
+#endif   
+        /* if ( P23x == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
           EXIT(123);
         } */
 
-	      /***********************************************************
-         * P2/3/x_{rho,sigma,nu}
-         ***********************************************************/
-        //double ****** P23x = init_6level_dtable ( n_yp, kernel_n*kernel_n_geom, 1, 4, 4, 4 );
-        //double *P23x = (double *) malloc(n_yp *  kernel_n * kernel_n_geom * 4 * 4 * 4 * sizeof(double));
-        double *P23x;
-        cudaHostAlloc((void **)&P23x, n_yp *  kernel_n * kernel_n_geom * 4 * 4 * 4 * sizeof(double), cudaHostAllocDefault);
-        
-        /* if ( P23x == NULL )
+        /* if ( P1 == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
           EXIT(123);
@@ -1985,20 +1989,22 @@ int main(int argc, char **argv) {
         /**********************************************************
          * compute P1, P2, P3, ...
          **********************************************************/
+        /* old implementation */
         /*compute_2p2_pieces(
             fwd_y, P1, P23x, gsy, 0, io_proc, n_yp, gyp,
             xunit, spinor_work, kqed_t, VOLUME, Nconf); */
 
-        //#if _WITH_TIMER
+#if _WITH_TIMER
         gettimeofday ( &ta, (struct timezone *)NULL );
-        //#endif
-        //compute_2p2_gpu(fwd_y, &(P1[0][0][0][0][0]), &(P23x[0][0][0][0][0][0]), 0, gsy, gyp, n_yp, xunit, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+#endif
+        /* new implemnetation in hlbl_kernel */
         compute_2p2_gpu(fwd_y, P1, P23x, 0, gsy, gyp, n_yp, xunit, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+        //compute_2p2_cpu(fwd_y, P1, P23x, gsy, 0, n_yp, gyp, xunit, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
 
-        //#if _WITH_TIMER
+#if _WITH_TIMER
         gettimeofday ( &tb, (struct timezone *)NULL );
         show_time ( &ta, &tb, "hlbl_mII_invert_contract", "2+2 pieces", io_proc == 2 );
-        //#endif
+#endif
 
         /**********************************************************
          * write P1, P2, P3, ...
@@ -2046,10 +2052,13 @@ int main(int argc, char **argv) {
             }
           }
         }
-        //fini_5level_dtable ( &P1 );
-        //fini_6level_dtable( &P23x );
+#ifdef HAVE_CUDA
         cudaFreeHost(P1);
         cudaFreeHost(P23x);
+#else
+        free(P1);
+        free(P23x);
+#endif
         }
       } /* end of P1, P2, P3, ... */
       
