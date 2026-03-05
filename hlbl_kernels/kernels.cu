@@ -11,7 +11,7 @@ typedef struct {
   double re, im;
 } complex;
 
-#define kernel_n 3 // L0, L3, M2
+#define kernel_n 1 // L0, L3, M2
 #define kernel_n_geom 3 // P2_0, P2_1, P3
 
 #define check(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -208,20 +208,20 @@ __device__ inline static void site_map_zerohalf (int xv[4], int const x[4], unsi
 
 __device__ inline static void KQED_LX(int const ikernel, const double xm[4], const double ym[4],
     const struct QED_kernel_temps kqed_t, double kerv[6][4][4][4]) {
-    switch (ikernel) {
+    /* switch (ikernel) {
         case 0:
             QED_kernel_L0( xm, ym, kqed_t, kerv );
             break;
         case 1:
             QED_kernel_L3( xm, ym, kqed_t, kerv );
             break;
-        case 2:
+        case 2: */
             QED_Mkernel_L2( 0.4, xm, ym, kqed_t, kerv );
-            break;
+            /* break;
         default:
             printf("Error: kernel index %d out of range (0-%d)\n", ikernel, kernel_n-1);
             break;
-    }
+    } */
 }
 
 __global__ void kernel_pi(double* fwd_y, double * Pi, int iflavor, unsigned const VOLUME){
@@ -845,7 +845,7 @@ __host__ void compute_2p2_gpu(double *fwd_y, double *P1, double *P23, int iflavo
 
     
     // --- Stream x3: P23 ---
-    dim3 gridP23(88, 3);
+    dim3 gridP23(88, kernel_n);
     dim3 blockP23(256);
     kernel_p20<<<gridP23, blockP23, 0, stream_p20>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
     kernel_p21<<<gridP23, blockP23, 0, stream_p21>>>(Pi_d, P23_d, n_y, gsw, gycoords_d, xunit, kqed_t, VOLUME, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);

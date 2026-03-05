@@ -39,7 +39,7 @@ struct Pair {
 #define CUDA_BLOCK_SIZE 4
 #define CUDA_THREAD_DIM_1D 32
 
-#define CUDA_N_QED_KERNEL 3
+#define CUDA_N_QED_KERNEL 1
 #define CUDA_N_QED_GEOM 3
 
 void cu_spinor_field_eq_gamma_ti_spinor_field(

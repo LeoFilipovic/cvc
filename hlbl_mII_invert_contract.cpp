@@ -85,7 +85,7 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
  * choice of KQED kernels
  * NOTE: Must be consistently updated between here and CUDA.
  ***********************************************************/
-#define kernel_n 3
+#define kernel_n 1
 #ifdef CUDA_N_QED_KERNEL
 #if CUDA_N_QED_KERNEL != kernel_n
 #error "Mismatching number of QED kernels between CUDA and CPU"
@@ -105,17 +105,17 @@ void QED_kernel_L0P4( const double xv[4], const double yv[4], const struct QED_k
 }
 
 QED_kernel_LX_ptr KQED_LX[kernel_n] = {
-  QED_kernel_L0,
-  QED_kernel_L3,
+  /* QED_kernel_L0,
+  QED_kernel_L3, */
   QED_kernel_L0P4,
 };
 const char * KQED_NAME[kernel_n] = {
-  "L0", "L3", "LLambda0.4"
+  /* "L0", "L3", */ "LLambda0.4"
 };
 /* const char * KQED_GEOM_NAME[kernel_n_geom] = {
   "P2_0", "P2_1", "P3", "P4_0", "P4_1"
 }; */
-const char * KQED_GEOM_NAME[3] = {
+const char * KQED_GEOM_NAME[kernel_n_geom] = {
   "P2_0", "P2_1", "P3"
 };
 
@@ -2030,18 +2030,18 @@ int main(int argc, char **argv) {
           int cdim[4] = { 1, 4, 4, 4 };
           char key[100];
           fprintf(stdout, "[hlbl_mII_invert_contract] writing P2/P3/x values %f\n", P23x[1]);
-          for ( int igeom = 0; igeom < 3; igeom++ )
+          for ( int igeom = 0; igeom < kernel_n_geom; igeom++ )
           {
             for ( int iyp = 0; iyp < n_yp; iyp++ )
             {
-              for ( int ikernel = 0; ikernel < 3; ikernel++ )
+              for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
               {
                 sprintf (key, "/%s/t%dx%dy%dz%d/t%dx%dy%dz%d/%s",
                          KQED_GEOM_NAME[igeom], gsy[0], gsy[1], gsy[2], gsy[3],
                          gyp[4*iyp+0], gyp[4*iyp+1], gyp[4*iyp+2], gyp[4*iyp+3],
                          KQED_NAME[ikernel] );
 
-                exitstatus = write_h5_contraction (P23x + igeom*n_yp*3*64 + iyp*3*64 + ikernel*64,
+                exitstatus = write_h5_contraction (P23x + igeom*n_yp*kernel_n*64 + iyp*kernel_n*64 + ikernel*64,
                    NULL, output_filename, key, "double", ncdim, cdim );
                 if ( exitstatus != 0 )
                 {
