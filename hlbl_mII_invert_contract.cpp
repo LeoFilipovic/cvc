@@ -2034,14 +2034,14 @@ int main(int argc, char **argv) {
           {
             for ( int iyp = 0; iyp < n_yp; iyp++ )
             {
-              for ( int ikernel = 0; ikernel < 3; ikernel++ )
+              for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
               {
                 sprintf (key, "/%s/t%dx%dy%dz%d/t%dx%dy%dz%d/%s",
                          KQED_GEOM_NAME[igeom], gsy[0], gsy[1], gsy[2], gsy[3],
                          gyp[4*iyp+0], gyp[4*iyp+1], gyp[4*iyp+2], gyp[4*iyp+3],
                          KQED_NAME[ikernel] );
 
-                exitstatus = write_h5_contraction (P23x + igeom*n_yp*3*64 + iyp*3*64 + ikernel*64,
+                exitstatus = write_h5_contraction (P23x + igeom*n_yp*kernel_n*64 + iyp*kernel_n*64 + ikernel*64,
                    NULL, output_filename, key, "double", ncdim, cdim );
                 if ( exitstatus != 0 )
                 {

@@ -880,3 +880,448 @@ void check_P23_cuda(int const g_proc_coords[4], unsigned T, unsigned LX, unsigne
   free(P23);
   free(P23_cuda);
 } 
+
+inline void site_map (int xv[4], int const x[4], unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global)
+{
+  xv[0] = ( x[0] >= T_global   / 2 ) ? (x[0] - T_global )  : x[0];
+  xv[1] = ( x[1] >= LX_global  / 2 ) ? (x[1] - LX_global)  : x[1];
+  xv[2] = ( x[2] >= LY_global  / 2 ) ? (x[2] - LY_global)  : x[2];
+  xv[3] = ( x[3] >= LZ_global  / 2 ) ? (x[3] - LZ_global)  : x[3];
+
+  return;
+}
+
+void compute_4pt_0(
+    const double * fwd_src, const double * fwd_y,
+    double const g_dzu[6][4][12][24], double const g_dzsu[6][4][12][24],
+    const int* gsx, int iflavor, const double xunit[2], const int yv[4],
+    double* kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, 
+    int const g_proc_coords[4], MPI_Comm g_cart_grid, unsigned T, unsigned LX, unsigned LY, unsigned LZ, 
+    unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global) {
+#pragma omp parallel
+{
+  double kernel_sum_thread[kernel_n] = { 0 };
+
+  double **** corr_I  = cvc::init_4level_dtable ( 6, 4, 4, 8 );
+  double **** corr_II = cvc::init_4level_dtable ( 6, 4, 4, 8 );
+  double ***  dxu     = cvc::init_3level_dtable ( 4, 12, 24 );
+  double **** g_dxu   = cvc::init_4level_dtable ( 4, 4, 12, 24 );
+
+  double spinor1[24];
+
+  double kerv1[6][4][4][4] KQED_ALIGN ;
+  double kerv2[6][4][4][4] KQED_ALIGN ;
+  double kerv3[6][4][4][4] KQED_ALIGN ;
+  
+
+  /***********************************************************
+   ***********************************************************
+   **
+   ** loop on volume
+   **
+   ***********************************************************
+   ***********************************************************/
+#pragma omp for
+  for ( unsigned int ix = 0; ix < VOLUME; ix++ )
+  {
+    /* int x[4] = { g_proc_coords[0]*T  + g_lexic2coords[ix][0],
+                 g_proc_coords[1]*LX + g_lexic2coords[ix][1],
+                 g_proc_coords[2]*LY + g_lexic2coords[ix][2],
+                 g_proc_coords[3]*LZ + g_lexic2coords[ix][3] };
+
+    x[0] = ( x[0] - gsx[0] + T_global  ) % T_global;
+    x[1] = ( x[1] - gsx[1] + LX_global ) % LX_global;
+    x[2] = ( x[2] - gsx[2] + LY_global ) % LY_global;
+    x[3] = ( x[3] - gsx[3] + LZ_global ) % LZ_global; */
+    int const x[4] = {(ix / (LX * LY * LZ)  + g_proc_coords[0] * T - gsx[0] + T_global) % T_global,
+    (ix / (LY * LZ) % LX + g_proc_coords[1] * LX - gsx[1] + LX_global) % LX_global,
+    ((ix / LZ) % LY + g_proc_coords[2] * LY - gsx[2] + LY_global) % LY_global,
+    (ix % LZ + g_proc_coords[3] * LZ - gsx[3] + LZ_global) % LZ_global};
+
+    int xv[4], xvzh[4];
+    site_map ( xv, x, T_global, LX_global, LY_global, LZ_global);
+    site_map_zerohalf ( xvzh, x, T_global, LX_global, LY_global, LZ_global);
+
+    // double local_g_fwd_src[4 * 12 * 12 * 2];
+    // for ( int mu = 0; mu < 4; mu++ )
+    // {
+    //   for ( int ia = 0; ia < 12; ia++ )
+    //   {
+    //     double * const _d = fwd_src[1-iflavor][ia] + _GSI(ix);
+    //     double * const _t = &local_g_fwd_src[(mu * 12 + ia) * 12 * 2];
+    //     _fv_eq_gamma_ti_fv ( _t, mu, _d );
+    //     _fv_ti_eq_g5 ( _t );
+    //   }
+    // }
+
+    for ( int ib = 0; ib < 12; ib++)
+    {
+      //double * const _u = fwd_y[iflavor][ib] + _GSI(ix);
+      double const * _u = fwd_y + prop_idx(iflavor, ib, ix, 0, VOLUME);
+
+      for ( int mu = 0; mu < 4; mu++ )
+      {
+
+        for ( int ia = 0; ia < 12; ia++)
+        {
+          //double * const _d = fwd_src[1-iflavor][ia] + _GSI(ix);
+          double const * _d = fwd_src + prop_idx(1-iflavor, ia, ix, 0, VOLUME);
+          double * const _t = spinor1;
+          _fv_eq_gamma_ti_fv ( _t, mu, _d );
+          _fv_ti_eq_g5 ( _t );
+          // double * const _t = &local_g_fwd_src[(mu * 12 + ia) * 12 * 2];
+
+          // double * const _d = g_fwd_src_2[1-iflavor][mu][ia] + _GSI(ix);
+          complex w;
+
+          _co_eq_fv_dag_ti_fv ( &w, _t, _u );
+
+          /* -1 factor due to (g5 gmu)^+ = -g5 gmu */
+          dxu[mu][ib][2*ia  ] = -w.re;
+          dxu[mu][ib][2*ia+1] = -w.im;
+        }
+      } /* end of loop on gamma_mu */
+    }
+
+
+    for ( int mu = 0; mu < 4; mu++ )
+    {
+      for ( int ib = 0; ib < 12; ib++)
+      {
+        _fv_eq_gamma_ti_fv ( spinor1, 5, dxu[mu][ib] );
+        for ( int lambda = 0; lambda < 4; lambda++ )
+        {
+          _fv_eq_gamma_ti_fv ( g_dxu[lambda][mu][ib], lambda, spinor1 );
+        }
+      }
+    }
+    if (ix==0) printf("g_dxu[0][0][0][0] = %f\n", g_dxu[0][0][0][0]);
+
+    /***********************************************************
+     * combine g_dxu and g_dzu
+     ***********************************************************/
+    for ( int mu = 0; mu < 4; mu++ )
+    {
+      for ( int nu = 0; nu < 4; nu++ )
+      {
+        for ( int lambda = 0; lambda < 4; lambda++ )
+        {
+          for( int k = 0; k < 6; k++ )
+          {
+
+            double dtmp[2] = {0., 0.};
+            for ( int ia = 0; ia < 12; ia++)
+            {
+              for ( int ib = 0; ib < 12; ib++)
+              {
+
+                double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
+
+                double v[2] = { g_dzu[k][nu][ib][2*ia], g_dzu[k][nu][ib][2*ia+1] };
+
+                dtmp[0] += u[0] * v[0] - u[1] * v[1];
+                dtmp[1] += u[0] * v[1] + u[1] * v[0];
+              }
+            }
+            corr_I[k][mu][nu][2*lambda  ] = -dtmp[0];
+            corr_I[k][mu][nu][2*lambda+1] = -dtmp[1];
+          }
+        }
+      }
+    }
+    /***********************************************************
+     * combine g_dxu and g_dzsu
+     ***********************************************************/
+    for ( int mu = 0; mu < 4; mu++ )
+    {
+      for ( int nu = 0; nu < 4; nu++ )
+      {
+        for ( int lambda = 0; lambda < 4; lambda++ )
+        {
+          for( int k = 0; k < 6; k++ )
+          {
+            int const sigma = idx_comb[k][1];
+            int const rho   = idx_comb[k][0];
+
+            double dtmp[2] = {0., 0.};
+            for ( int ia = 0; ia < 12; ia++)
+            {
+              for ( int ib = 0; ib < 12; ib++)
+              {
+
+                double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
+
+                double v[2] = { xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia  ] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia  ],
+                                xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia+1] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia+1] };
+
+                dtmp[0] += u[0] * v[0] - u[1] * v[1];
+                dtmp[1] += u[0] * v[1] + u[1] * v[0];
+              }
+            }
+            corr_II[k][mu][nu][2*lambda  ] = -dtmp[0];
+            corr_II[k][mu][nu][2*lambda+1] = -dtmp[1];
+          }
+        }
+      }
+    }
+
+    /***********************************************************/
+    /***********************************************************/
+
+    /***********************************************************
+     * summation with QED kernel
+     ***********************************************************/
+    double const xm[4] = {
+      xv[0] * xunit[0],
+      xv[1] * xunit[0],
+      xv[2] * xunit[0],
+      xv[3] * xunit[0] };
+
+    double const ym[4] = {
+      yv[0] * xunit[0],
+      yv[1] * xunit[0],
+      yv[2] * xunit[0],
+      yv[3] * xunit[0] };
+
+
+    // double * const _kerv1   = (double * const )kerv1;
+    // double * const _kerv2   = (double * const )kerv2;
+    // double * const _kerv3   = (double * const )kerv3;
+
+    double * const _corr_I  = corr_I[0][0][0];
+    double * const _corr_II = corr_II[0][0][0];
+    if (ix==0) {
+    printf("first element of corr_I = %f\n", corr_I[0][0][0][0]);
+    printf("first element of corr_II = %f\n", corr_II[0][0][0][0]);
+    }
+    double const xm_mi_ym[4] = {
+      xm[0] - ym[0],
+      xm[1] - ym[1],
+      xm[2] - ym[2],
+      xm[3] - ym[3] };
+
+    /***********************************************************
+     * loop on kernsl
+     ***********************************************************/
+    for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
+    {
+
+      KQED_LX[ikernel]( xm, ym,       kqed_t, kerv1 );
+      KQED_LX[ikernel]( ym, xm,       kqed_t, kerv2 );
+      KQED_LX[ikernel]( xm, xm_mi_ym, kqed_t, kerv3 );
+      double dtmp = 0.;
+      int i = 0;
+      for( int k = 0; k < 6; k++ )
+      {
+        for ( int mu = 0; mu < 4; mu++ )
+        {
+          for ( int nu = 0; nu < 4; nu++ )
+          {
+            for ( int lambda = 0; lambda < 4; lambda++ )
+            {
+              dtmp += ( kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu] ) * _corr_I[2*i]
+                  + kerv3[k][lambda][nu][mu] * _corr_II[2*i];
+
+              i++;
+            }
+          }
+        }
+      }
+
+      kernel_sum_thread[ikernel] += dtmp;
+
+    }  /* end of loop on kernels */
+  }  /* end of loop on ix */
+
+  /***********************************************************
+   * summation with QED kernel
+   ***********************************************************/
+#pragma omp critical
+{
+
+  for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
+  {
+    kernel_sum[ikernel] += kernel_sum_thread[ikernel];
+  }
+   /***********************************************************/
+}  /* end of critical region */
+   /***********************************************************/
+
+
+  cvc::fini_4level_dtable ( &corr_I  );
+  cvc::fini_4level_dtable ( &corr_II );
+  cvc::fini_4level_dtable ( &g_dxu   );
+  cvc::fini_3level_dtable ( &dxu     );
+
+   /***********************************************************/
+}  /* end of parallel region */
+   /***********************************************************/
+}
+
+
+void compute_4pt(
+    const double * fwd_src, const double * fwd_y,
+    double const g_dzu[6][4][12][24], double const g_dzsu[6][4][12][24],
+    const int* gsx, int iflavor, const double xunit[2], const int yv[4],
+    double* kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME,
+    int const g_proc_coords[4], MPI_Comm g_cart_grid, unsigned T, unsigned LX, unsigned LY, unsigned LZ, 
+    unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global)
+{    
+  for ( unsigned int ix = 0; ix < VOLUME; ix++ )
+  {
+    int const x[4] = {(ix / (LX * LY * LZ)  + g_proc_coords[0] * T - gsx[0] + T_global) % T_global,
+    (ix / (LY * LZ) % LX + g_proc_coords[1] * LX - gsx[1] + LX_global) % LX_global,
+    ((ix / LZ) % LY + g_proc_coords[2] * LY - gsx[2] + LY_global) % LY_global,
+    (ix % LZ + g_proc_coords[3] * LZ - gsx[3] + LZ_global) % LZ_global};
+
+    int xv[4], xvzh[4];
+    site_map (xv, x, T_global, LX_global, LY_global, LZ_global);
+    site_map_zerohalf (xvzh, x, T_global, LX_global, LY_global, LZ_global);
+
+    double const xm[4] = {
+      xv[0] * xunit[0],
+      xv[1] * xunit[0],
+      xv[2] * xunit[0],
+      xv[3] * xunit[0] };
+
+    double const ym[4] = {
+      yv[0] * xunit[0],
+      yv[1] * xunit[0],
+      yv[2] * xunit[0],
+      yv[3] * xunit[0] };
+
+    double const xm_mi_ym[4] = {
+      xm[0] - ym[0],
+      xm[1] - ym[1],
+      xm[2] - ym[2],
+      xm[3] - ym[3] };
+
+    double kerv1[kernel_n][6][4][4][4] KQED_ALIGN ;
+    double kerv2[kernel_n][6][4][4][4] KQED_ALIGN ;
+    double kerv3[kernel_n][6][4][4][4] KQED_ALIGN ;
+
+    for ( int ikernel = 0; ikernel < kernel_n; ikernel++ ){
+      KQED_LX[ikernel]( xm, ym,       kqed_t, kerv1[ikernel] );
+      KQED_LX[ikernel]( ym, xm,       kqed_t, kerv2[ikernel] );
+      KQED_LX[ikernel]( xm, xm_mi_ym, kqed_t, kerv3[ikernel] );
+    }
+
+    //double ker_sum[kernel_n] = {0.};
+
+    for (int mu=0; mu<4; mu++){
+      // find dxu
+      // load u[ia] = g_5 fwd_y[iflav][ia][ix]
+      double u[12][24]; // g_5 fwd_y
+      for (int ia=0; ia<12; ia++){
+        for (int ib=0; ib<24; ib++)
+        {
+          u[ia][ib] = fwd_y[prop_idx(iflavor, ia, ix, ib, VOLUME)];
+        }
+      }
+      for (int ia=0; ia<12; ia++) _fv_ti_eq_g5(u[ia]);
+
+      // load d[ia] = g_mu fwd_src[1-iflavor][ia][ix]
+      double d[12][24];
+      for (int ia=0; ia<12; ia++){
+        _fv_eq_gamma_ti_fv( d[ia], mu, fwd_src + prop_idx(1-iflavor, ia, ix, 0, VOLUME));
+      }
+
+      // dxu[ia][ib] = d[ib]^dagger u[ia]
+      double dxu[12][24];
+      for (int ia=0; ia<12; ia++){
+        for (int ib=0; ib<12; ib++){
+          complex w;
+          _co_eq_fv_dag_ti_fv( &w, d[ib], u[ia] );
+          dxu[ia][ib*2] = w.re;
+          dxu[ia][ib*2+1] = w.im;
+        }
+        _fv_ti_eq_g5(dxu[ia]);
+      }
+
+      for (int lambda=0; lambda<4; lambda++) {
+        // g_dxu = g_lambda dxu
+        double g_dxu[12][24];
+        for (int ia=0; ia<12; ia++) _fv_eq_gamma_ti_fv(g_dxu[ia], lambda, dxu[ia]);
+        if (ix==0 && mu==0 && lambda==0) printf("g_dxu[0][0][0][0] = %f\n", g_dxu[0][0]);
+
+        for (int k=0; k<6; k++)
+        for (int nu=0; nu<4; nu++)
+        {
+          double corr_I=0.; // the real trace
+          for (int ia=0; ia<12; ia++)
+          for (int ib=0; ib<12; ib++) {
+            double const u[2] = {g_dxu[ia][ib*2], g_dxu[ia][ib*2+1]};
+            double const v[2] = {g_dzu[k][nu][ib][ia*2], g_dzu[k][nu][ib][ia*2+1]};
+            /* complex w;
+            _co_eq_fv_dag_ti_fv(&w, g_dxu[ia], g_dzu[k][nu][ib]); */
+            corr_I += u[0] * v[0] - u[1] * v[1];
+          }
+          
+          double corr_II = 0.; // the real trace
+          int const rho = idx_comb[k][0];
+          int const sigma = idx_comb[k][1];
+          for (int ia=0; ia<12; ia++)
+          for (int ib=0; ib<12; ib++) {
+            complex const factor = {xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia],
+                          xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia+1] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia+1]};
+            corr_II += g_dxu[ia][2*ib] * factor.re - g_dxu[ia][2*ib+1] * factor.im;
+          }
+
+          if (ix==0 && lambda==0 && k==0 && nu==0 && mu==0) {
+            printf("new corr_I = %f\n", corr_I);
+            printf("new corr_II = %f\n", corr_II);
+          }
+
+          //contract with QED kernel
+          for (int ikernel=0; ikernel<kernel_n; ikernel++){
+            kernel_sum[ikernel] += (kerv1[ikernel][k][mu][nu][lambda] + kerv2[ikernel][k][nu][mu][lambda] - kerv3[ikernel][k][lambda][nu][mu]) * corr_I
+                + kerv3[ikernel][k][lambda][nu][mu] * corr_II;
+          }
+        }
+      }
+    }
+  }
+}
+
+void check_compute_4pt(size_t const vol, int const g_proc_coords[4], MPI_Comm g_cart_grid, unsigned T, unsigned LX, unsigned LY, unsigned LZ, 
+    unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global) {
+  double *fwd_src = (double *) malloc(sizeof(double) * 2 * 12 * 24 * vol);
+  double *fwd_y = (double *) malloc(sizeof(double) * 2 * 12 * 24 * vol);
+  srand(1234);
+  for (int i = 0; i < 2 * 12 * 24 * vol; i++) {
+    fwd_src[i] = rand() * 2. / RAND_MAX - 1; // a random number between -1 and 1
+    fwd_y[i] = rand() * 2. / RAND_MAX - 1; // a random number between -1 and 1
+  }
+
+  double g_dzu[6][4][12][24];
+  double g_dzsu[6][4][12][24];
+  for (int k=0; k<6; k++)
+  for (int nu=0; nu<4; nu++)
+  for (int ia=0; ia<12; ia++)
+  for (int ib=0; ib<24; ib++){
+    g_dzu[k][nu][ia][ib] = rand() * 2. / RAND_MAX - 1;
+    g_dzsu[k][nu][ia][ib] = rand() * 2. / RAND_MAX - 1;
+  }
+
+  double kernel_sum[kernel_n] = {0.};
+  double kernel_sum_ref[kernel_n] = {0.};
+  QED_kernel_temps kqed_t;
+  initialise(&kqed_t);
+  double const xunit[2] = {0.1, 0.2};
+  int const y[4] = {1,2,3,4};
+  int const gsx[4] = {0,0,0,0};
+
+  compute_4pt_0(fwd_src, fwd_y, g_dzu, g_dzsu, gsx, 0, xunit, y, kernel_sum_ref, kqed_t, vol, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+  //compute_4pt(fwd_src, fwd_y, g_dzu, g_dzsu, gsx, 0, xunit, y, kernel_sum, kqed_t, vol, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);  
+
+  /* int flag = 0;
+  for (int ikernel=0; ikernel<kernel_n; ikernel++){
+    const double diff = kernel_sum[ikernel] - kernel_sum_ref[ikernel];
+    if (diff * diff > 1e-26) {
+      flag=1;
+      printf("4pt kernel_sum difference at [%d], %.10f VS %.10f\n.", ikernel, kernel_sum[ikernel], kernel_sum_ref[ikernel]);
+    }
+  }
+  if (flag) printf("4pt correctness FAILED.\n");
+  else printf("4pt correctness PASSED.\n"); */
+}

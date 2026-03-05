@@ -73,7 +73,7 @@ int main ( int argc, char **argv )
   //compute_p23_0(p1_1, P23, src, ny, (const int *)y_coord, xunit, VOLUME);
   //compute_p23(p1_1, P23, src, ny, (const int *)y_coord, xunit, kqed_t, VOLUME);
 
-  compute_2p2_cpu(fwd_y, P1, P23, src, 0, ny, (const int *)y_coord, xunit, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+  //compute_2p2_cpu(fwd_y, P1, P23, src, 0, ny, (const int *)y_coord, xunit, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
 
   
   //check_Pi(VOLUME);
@@ -83,6 +83,8 @@ int main ( int argc, char **argv )
   //check_Pi_cuda();
   //check_P1_cuda();
   //check_P23_cuda();
+
+  check_compute_4pt(VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
 
   free(p1_0);
   free(p1_1);
