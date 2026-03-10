@@ -61,7 +61,7 @@ __device__ __constant__ int idx_comb_d[6][2] ={
     (s)[20]*(t)[21] - (s)[21]*(t)[20] +\
     (s)[22]*(t)[23] - (s)[23]*(t)[22];}
 
-__device__ inline static void _fv_eq_gamma_ti_fv(double* out, int gamma_index, double* in) {
+__device__ inline static void _fv_eq_gamma_ti_fv(double* out, int gamma_index, double const* in) {
     switch (gamma_index)
     {
     case 0: // gamma_0
@@ -168,6 +168,32 @@ __device__ inline static void _fv_eq_gamma_ti_fv(double* out, int gamma_index, d
         out[22] =  in[11];
         out[23] = -in[10];
         break;
+    case 5:
+        out[0]  =  in[0];
+        out[1]  =  in[1];
+        out[2]  =  in[2];
+        out[3]  =  in[3];
+        out[4]  =  in[4];
+        out[5]  =  in[5];
+        out[6]  =  in[6];
+        out[7]  =  in[7];
+        out[8]  =  in[8];
+        out[9]  =  in[9];
+        out[10] =  in[10];
+        out[11] =  in[11];
+        out[12] = -in[12];
+        out[13] = -in[13];
+        out[14] = -in[14];
+        out[15] = -in[15];
+        out[16] = -in[16];
+        out[17] = -in[17];
+        out[18] = -in[18];
+        out[19] = -in[19];
+        out[20] = -in[20];
+        out[21] = -in[21];
+        out[22] = -in[22];
+        out[23] = -in[23];
+        break;
     default:
         break;
     }
@@ -179,7 +205,6 @@ __device__ inline static void _fv_ti_eq_g5(double* in_out) {
         in_out[i] *= -1;
     }
 }
-
 
 __host__ inline static int get_max(unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global)
 {
@@ -1081,181 +1106,132 @@ __host__ void record_2p2_cuda(double *fwd_y, double *P1, double *P23, int iflavo
     return;
 }
 
-
-/* 4pt kernel sum sum kernels */
-// compute dxu
-__global__ void compute_dxu(const double * _RESTR fwd_src, const double * _RESTR fwd_y, double * _RESTR g_dxu, int iflavor, unsigned VOLUME) {
-    int const x[4] = {
-    (ix / (static_cast<int>(LX) * static_cast<int>(LY) * static_cast<int>(LZ)) - gsx[0] + g_proc_coords[0] * static_cast<int>(T) + static_cast<int>(T_global)) % static_cast<int>(T_global),
-    (ix / (static_cast<int>(LY) * static_cast<int>(LZ)) % static_cast<int>(LX) - gsx[1] + g_proc_coords[1] * static_cast<int>(LX) + static_cast<int>(LX_global)) % static_cast<int>(LX_global),
-    ((ix / static_cast<int>(LZ)) % static_cast<int>(LY) - gsx[2]  + g_proc_coords[2] * static_cast<int>(LY) + static_cast<int>(LY_global)) % static_cast<int>(LY_global),
-    (ix % static_cast<int>(LZ) - gsx[3] + g_proc_coords[3] * static_cast<int>(LZ) + static_cast<int>(LZ_global)) % static_cast<int>(LZ_global)};
-
-    int xv[4], xvzh[4];
-    site_map (xv, x, T_global, LX_global, LY_global, LZ_global);
-    site_map_zerohalf(xvzh, x, T_global, LX_global, LY_global, LZ_global);
-
-    for ( int ib = 0; ib < 12; ib++)
-    {
-      double * const _u = fwd_y[iflavor][ib] + _GSI(ix);
-
-      for ( int mu = 0; mu < 4; mu++ )
-      {
-
-        for ( int ia = 0; ia < 12; ia++)
-        {
-          double * const _d = fwd_src[1-iflavor][ia] + _GSI(ix);
-          double * const _t = spinor1;
-          _fv_eq_gamma_ti_fv ( _t, mu, _d );
-          _fv_ti_eq_g5 ( _t );
-          // double * const _t = &local_g_fwd_src[(mu * 12 + ia) * 12 * 2];
-
-          // double * const _d = g_fwd_src_2[1-iflavor][mu][ia] + _GSI(ix);
-          complex w;
-
-          _co_eq_fv_dag_ti_fv ( &w, _t, _u );
-
-          /* -1 factor due to (g5 gmu)^+ = -g5 gmu */
-          dxu[mu][ib][2*ia  ] = -w.re;
-          dxu[mu][ib][2*ia+1] = -w.im;
-        }
-      } /* end of loop on gamma_mu */
-    }
-}
-
-__device__ inline void kernel_dxu(int ix, const double* _RESTR fwd_src, const double* _RESTR fwd_y,
-    double* _RESTR g_dxu, int iflavor,
-    unsigned const T_global, unsigned const LX_global, unsigned const LY_global, unsigned const LZ_global,
-    unsigned const T, unsigned const LX, unsigned const LY, unsigned const LZ,
-    const int g_proc_coords[4]) {
-
-    for ( int ib = 0; ib < 12; ib++)
-    {
-    double * const _u = fwd_y[iflavor][ib] + _GSI(ix);
-
-    for ( int mu = 0; mu < 4; mu++ )
-    {
-
-    for ( int ia = 0; ia < 12; ia++)
-    {
-        double * const _d = fwd_src[1-iflavor][ia] + _GSI(ix);
-        double * const _t = spinor1;
-        _fv_eq_gamma_ti_fv ( _t, mu, _d );
-        _fv_ti_eq_g5 ( _t );
-        // double * const _t = &local_g_fwd_src[(mu * 12 + ia) * 12 * 2];
-
-        // double * const _d = g_fwd_src_2[1-iflavor][mu][ia] + _GSI(ix);
-        complex w;
-
-        _co_eq_fv_dag_ti_fv ( &w, _t, _u );
-
-        /* -1 factor due to (g5 gmu)^+ = -g5 gmu */
-        dxu[mu][ib][2*ia  ] = -w.re;
-        dxu[mu][ib][2*ia+1] = -w.im;
-    }
-    } /* end of loop on gamma_mu */
-    }
-
-
-
-}
-
-__global__ void kernel_corrI(){
-    for ( int mu = 0; mu < 4; mu++ )
-    {
-      for ( int nu = 0; nu < 4; nu++ )
-      {
-        for ( int lambda = 0; lambda < 4; lambda++ )
-        {
-          for( int k = 0; k < 6; k++ )
-          {
-
-            double dtmp[2] = {0., 0.};
-            for ( int ia = 0; ia < 12; ia++)
-            {
-              for ( int ib = 0; ib < 12; ib++)
-              {
-
-                double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
-
-                double v[2] = { g_dzu[k][nu][ib][2*ia], g_dzu[k][nu][ib][2*ia+1] };
-
-                dtmp[0] += u[0] * v[0] - u[1] * v[1];
-                dtmp[1] += u[0] * v[1] + u[1] * v[0];
-              }
-            }
-            corr_I[k][mu][nu][2*lambda  ] = -dtmp[0];
-            corr_I[k][mu][nu][2*lambda+1] = -dtmp[1];
-          }
-        }
-      }
-    }
-}
-
-__global__ void kernel_corrII(){
-
-}
-
-__global__ void kernel_sum(){
-    
-}
-
-__global__void kernel_4pt(){
-    int const x[4] = {
-    (ix / (static_cast<int>(LX) * static_cast<int>(LY) * static_cast<int>(LZ)) - gsx[0] + g_proc_coords[0] * static_cast<int>(T) + static_cast<int>(T_global)) % static_cast<int>(T_global),
-    (ix / (static_cast<int>(LY) * static_cast<int>(LZ)) % static_cast<int>(LX) - gsx[1] + g_proc_coords[1] * static_cast<int>(LX) + static_cast<int>(LX_global)) % static_cast<int>(LX_global),
-    ((ix / static_cast<int>(LZ)) % static_cast<int>(LY) - gsx[2]  + g_proc_coords[2] * static_cast<int>(LY) + static_cast<int>(LY_global)) % static_cast<int>(LY_global),
-    (ix % static_cast<int>(LZ) - gsx[3] + g_proc_coords[3] * static_cast<int>(LZ) + static_cast<int>(LZ_global)) % static_cast<int>(LZ_global)};
-
-    int xv[4], xvzh[4];
-    site_map (xv, x, T_global, LX_global, LY_global, LZ_global);
-    site_map_zerohalf(xvzh, x, T_global, LX_global, LY_global, LZ_global);
-
-    //compute dxu = - gamma_5 fwd_src[1-iflav][ia][ix] ^dagger gamma_mu gamma_5 fwd_y[iflavor][ib][ix]
-    const int ib = threadIdx.x;
-    #pragma unroll
-    for (int ia=0; ia<12; ia+=blockDim.y){
-        double const * u = fwd_y[iflavor][ib] + _GSI(ix);
-        double const * d = fwd_src[1-iflav][ia] + _GSI(ix);
-        double t[24];
-        for (int mu=0; mu<4; mu++){
-            _fv_eq_gamma_ti_fv(t, mu, d);
-            _fv_ti_eq_g5(t);
-
-            complex w;
-            _co_eq_fv_dag_ti_fv(&w, t, u);
-
-            dxu[mu][ib][2*ia] = -w.re;
-            dxu[mu][ib][2*ia+1] = -w.im;
-        }
-    }
-    __syncthreads();
-    if (threadIdx.y==0) _fv_ti_eq_g5(dxu[ib]);
-    __syncthreads();
-
-    //compute corrI
-    const int k = threadIdx.x / 2; // 0,..5
-    const int mu = threadIdx.x % 2 * 2 + threadIdx.y / 4; //(0, 1) * 2 + (0,1)
-    const int nu = threadIdx.y % 4;
-    double tmp0=0.;
-    double tmp1=0.;
-    for (int ia=0; ia<12; ia++)
-    for (int ib=0; ib<12; ib++){
-        tmp0 -= dxu[mu][ia][2*ib] * dzu[k][nu][ib][2*ia] - dxu[mu][ia][2*ib+1] * dzu[k][nu][ib][2*ia+1];
-        tmp1 -= dxu[mu+1][ia][2*ib] * dzu[k][nu][ib][2*ia] - dxu[mu+1][ia][2*ib+1] * dzu[k][nu][ib][2*ia+1];
-    }
-    corr_I[k][mu][nu] = tmp0;
-    corr_I[k][mu+1][nu] = tmp1;
-}
-
-__host__ void compute_4pt_gpu(double* _RESTR kernel_sum, const double* _RESTR g_dzu, const double* _RESTR g_dzsu,
-    const double* _RESTR fwd_src, const double* _RESTR fwd_y, const int iflavor,  int const g_proc_coords[4],
-    const double gsx[4], const double xunit[2], const double yv[4], QED_kernel_temps kqed_t,
-    unsigned const VOLUME, unsigned const T, unsigned const LX, unsigned const LY, unsigned const LZ,
-    unsigned const T_global, unsigned const LX_global, unsigned const LY_global, unsigned const LZ_global) 
+__global__ void kernel_4pt(const double * fwd_src, const double * fwd_y, double * g_dxu,
+    double const g_dzu[6][4][12][24], double const g_dzsu[6][4][12][24],
+    const int* gsx, int iflavor, const double xunit[2], const int yv[4],
+    double* kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME,
+    int const g_proc_coords[4], MPI_Comm g_cart_grid, unsigned T, unsigned LX, unsigned LY, unsigned LZ, 
+    unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global)
 {
-    dim3 grid(128);
-    dim3 block(12, 8);
+    // Shared memory for intermediate results. Total size: 17KB < 48KB limit
+    __shared__ double dxu[12][24]; //2KB
+    __shared__ double corr_I[6][4][4][4]; // 6*4*4*4*8B = 3KB
+    __shared__ double corr_II[6][4][4][4]; // 6*4*4*4*8B = 3KB
+    __shared__ double kerv1[6][4][4][4] KQED_ALIGN; // 6*4*4*4*8B = 3KB
+    __shared__ double kerv2[6][4][4][4] KQED_ALIGN; // 6*4*4*4*8B = 3KB
+    __shared__ double kerv3[6][4][4][4] KQED_ALIGN; // 6*4*4*4*8B = 3KB
 
-    cudaMalloc()
+    // One lattice point per block
+    for ( unsigned int ix = 0; ix < VOLUME; ix+=gridDim.x ){
+
+        int const x[4] = {(ix / (LX * LY * LZ)  + g_proc_coords[0] * T - gsx[0] + T_global) % T_global,
+        (ix / (LY * LZ) % LX + g_proc_coords[1] * LX - gsx[1] + LX_global) % LX_global,
+        ((ix / LZ) % LY + g_proc_coords[2] * LY - gsx[2] + LY_global) % LY_global,
+        (ix % LZ + g_proc_coords[3] * LZ - gsx[3] + LZ_global) % LZ_global};
+
+        int xv[4], xvzh[4];
+        site_map ( xv, x, T_global, LX_global, LY_global, LZ_global);
+        site_map_zerohalf ( xvzh, x, T_global, LX_global, LY_global, LZ_global);
+        
+        if (threadIdx.x < 48){
+            int const mu = threadIdx.x / 12;
+            int const ib = threadIdx.x % 12;
+            // load d[ia] = g_mu fwd_src[1-iflavor][ia][ix]
+            double d[24];
+            _fv_eq_gamma_ti_fv(d, mu, fwd_src + prop_idx(1-iflavor, ib, ix, 0, VOLUME)); 
+            _fv_ti_eq_g5(d);
+
+            // dxu[ia][ib] = d[ib]^dagger u[ia]
+            for (int ia=0; ia<12; ia++){
+                complex w;
+                _co_eq_fv_dag_ti_fv( &w, d, fwd_y + prop_idx(iflavor, ia, ix, 0, VOLUME));
+                dxu[ia][ib*2] = w.re;
+                dxu[ia][ib*2+1] = w.im;
+            }
+            __syncthreads();
+
+            for (int lambda=0; lambda<4; lambda++){
+                // g_dxu = g_lambda dxu 
+                _fv_eq_gamma_ti_fv(g_dxu + mu*4*12*24 + lambda*12*24 + ib*24, lambda, dxu[ib]);
+            }
+        }
+
+        int const k = threadIdx.x / 64;
+        int const mu = (threadIdx.x % 64) / 16;
+        int const nu = (threadIdx.x % 16) / 4;
+        int const lambda = threadIdx.x % 4;
+        double tr1=0.; // the real trace
+        for (int ia=0; ia<12; ia++)
+        for (int ib=0; ib<12; ib++) {
+            double const u[2] = {g_dxu[mu*4*12*24 + lambda*12*24 + ia*24 + ib*2], g_dxu[mu*4*12*24 + lambda*12*24 + ia*24 + ib*2+1]};
+            double const v[2] = {g_dzu[k][nu][ib][ia*2], g_dzu[k][nu][ib][ia*2+1]};
+            tr1 += u[0] * v[0] - u[1] * v[1];
+        }
+        corr_I[k][mu][nu][lambda] = blockReduceSum(tr1);
+        
+        double tr2 = 0.; // the real trace
+        int const rho = idx_comb_d[k][0];
+        int const sigma = idx_comb_d[k][1];
+        for (int ia=0; ia<12; ia++)
+        for (int ib=0; ib<12; ib++) {
+            complex const factor = {xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia],
+                        xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia+1] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia+1]};
+            tr2 += g_dxu[mu*4*12*24 + lambda*12*24 + ia*24 + ib*2] * factor.re - g_dxu[mu*4*12*24 + lambda*12*24 + ia*24 + ib*2+1] * factor.im;
+        }
+        corr_II[k][mu][nu][lambda] = blockReduceSum(tr2);
+
+        double const xm[4] = {
+        xv[0] * xunit[0],
+        xv[1] * xunit[0],
+        xv[2] * xunit[0],
+        xv[3] * xunit[0] };
+
+        double const ym[4] = {
+        yv[0] * xunit[0],
+        yv[1] * xunit[0],
+        yv[2] * xunit[0],
+        yv[3] * xunit[0] };
+
+        double const xm_mi_ym[4] = {
+        xm[0] - ym[0],
+        xm[1] - ym[1],
+        xm[2] - ym[2],
+        xm[3] - ym[3] };
+
+        //contract with QED kernel
+        for (int ikernel=0; ikernel<kernel_n; ikernel++){
+            if (threadIdx.x == 0) KQED_LX(ikernel,  xm, ym,       kqed_t, kerv1);
+            if (threadIdx.x == 1) KQED_LX(ikernel,  ym, xm,       kqed_t, kerv2);
+            if (threadIdx.x == 2) KQED_LX(ikernel,  xm, xm_mi_ym, kqed_t, kerv3);
+            __syncthreads();
+
+            double const sum = (kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu]) * corr_I[k][mu][nu][lambda]
+                + kerv3[k][lambda][nu][mu] * corr_II[k][mu][nu][lambda];
+
+            kernel_sum[k] = blockReduceSum(sum);
+        }
+    }
 }
+
+__host__ void compute_4pt(
+    const double * fwd_src, const double * fwd_y,
+    double const g_dzu[6][4][12][24], double const g_dzsu[6][4][12][24],
+    const int* gsx, int iflavor, const double xunit[2], const int yv[4],
+    double* kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME,
+    int const g_proc_coords[4], MPI_Comm g_cart_grid, unsigned T, unsigned LX, unsigned LY, unsigned LZ, 
+    unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global)
+{    
+    for (int i=0; i<kernel_n; i++) kernel_sum[i] = 0.;
+    double *g_dxu_d;
+    cudaMalloc((void **)&g_dxu_d, sizeof(double) * 6*4*12*24);
+
+    dim3 gridDim(128);
+    dim3 blockDim(384);
+
+    kernel_4pt<<<gridDim, blockDim>>>(fwd_src, fwd_y, g_dxu_d, g_dzu, g_dzsu, gsx, 0, xunit, yv, kernel_sum, kqed_t, VOLUME,
+    g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+    
+    cudaFree(g_dxu_d);
+    return;
+  }
+

@@ -1167,6 +1167,9 @@ void compute_4pt(
     int const g_proc_coords[4], MPI_Comm g_cart_grid, unsigned T, unsigned LX, unsigned LY, unsigned LZ, 
     unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global)
 {    
+  for (int i=0; i<kernel_n; i++) kernel_sum[i] = 0.;
+
+  #pragma omp parallel for
   for ( unsigned int ix = 0; ix < VOLUME; ix++ )
   {
     int const x[4] = {(ix / (LX * LY * LZ)  + g_proc_coords[0] * T - gsx[0] + T_global) % T_global,
@@ -1177,6 +1180,82 @@ void compute_4pt(
     int xv[4], xvzh[4];
     site_map (xv, x, T_global, LX_global, LY_global, LZ_global);
     site_map_zerohalf (xvzh, x, T_global, LX_global, LY_global, LZ_global);
+
+    // find g_dxu
+    double g_dxu[4][4][12][24];
+    for (int mu=0; mu<4; mu++){
+      // load u[ia] = g_5 fwd_y[iflav][ia][ix]
+      double u[12][24]; // g_5 fwd_y
+      for (int ia=0; ia<12; ia++) 
+        _fv_eq_gamma_ti_fv(u[ia], 5, fwd_y + prop_idx(iflavor, ia, ix, 0, VOLUME));
+
+      // load d[ia] = g_mu fwd_src[1-iflavor][ia][ix]
+      double d[12][24];
+      for (int ia=0; ia<12; ia++)
+        _fv_eq_gamma_ti_fv(d[ia], mu, fwd_src + prop_idx(1-iflavor, ia, ix, 0, VOLUME)); 
+
+      // dxu[ia][ib] = d[ib]^dagger u[ia]
+      double dxu[12][24];
+      for (int ia=0; ia<12; ia++){
+        for (int ib=0; ib<12; ib++){
+          complex w;
+          _co_eq_fv_dag_ti_fv( &w, d[ib], u[ia] );
+          dxu[ia][ib*2] = w.re;
+          dxu[ia][ib*2+1] = w.im;
+        }
+        _fv_ti_eq_g5(dxu[ia]);
+      }
+
+      for (int lambda=0; lambda<4; lambda++) {
+      // g_dxu = g_lambda dxu
+        for (int ia=0; ia<12; ia++) _fv_eq_gamma_ti_fv(g_dxu[mu][lambda][ia], lambda, dxu[ia]);
+        //if (ix==0 && mu==0 && lambda==0) printf("g_dxu[0][0][0][0] = %f\n", g_dxu[0][0]);
+      }
+    }
+    if (ix==0) printf("g_dxu[0][0][0][0] = %f\n", g_dxu[0][0][0][0]);
+      
+
+    // compute corr_I = Tr(g_dxu g_dzu)
+    double corr_I[6][4][4][4];
+    double corr_II[6][4][4][4];
+    #pragma unroll
+    for (int k=0; k<6; k++)
+    for (int mu=0; mu<4; mu++)
+    for (int nu=0; nu<4; nu++)
+    for (int lambda=0; lambda<4; lambda++)
+    {
+      double tr=0.; // the real trace
+      for (int ia=0; ia<12; ia++)
+      for (int ib=0; ib<12; ib++) {
+        double const u[2] = {g_dxu[mu][lambda][ia][ib*2], g_dxu[mu][lambda][ia][ib*2+1]};
+        double const v[2] = {g_dzu[k][nu][ib][ia*2], g_dzu[k][nu][ib][ia*2+1]};
+        tr += u[0] * v[0] - u[1] * v[1];
+      }
+      corr_I[k][mu][nu][lambda] = tr;
+    }
+    
+    #pragma unroll
+    for (int k=0; k<6; k++)
+    for (int mu=0; mu<4; mu++) 
+    for (int nu=0; nu<4; nu++)
+    for (int lambda=0; lambda<4; lambda++)
+    {
+      double tr = 0.; // the real trace
+      int const rho = idx_comb[k][0];
+      int const sigma = idx_comb[k][1];
+      for (int ia=0; ia<12; ia++)
+      for (int ib=0; ib<12; ib++) {
+        complex const factor = {xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia],
+                      xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia+1] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia+1]};
+        tr += g_dxu[mu][lambda][ia][2*ib] * factor.re - g_dxu[mu][lambda][ia][2*ib+1] * factor.im;
+      }
+      corr_II[k][mu][nu][lambda]=tr;
+    }
+
+    if (ix==0) {
+      printf("new corr_I = %f\n", corr_I[0][0][0][0]);
+      printf("new corr_II = %f\n", corr_II[0][0][0][0]);
+    }
 
     double const xm[4] = {
       xv[0] * xunit[0],
@@ -1196,89 +1275,26 @@ void compute_4pt(
       xm[2] - ym[2],
       xm[3] - ym[3] };
 
-    double kerv1[kernel_n][6][4][4][4] KQED_ALIGN ;
-    double kerv2[kernel_n][6][4][4][4] KQED_ALIGN ;
-    double kerv3[kernel_n][6][4][4][4] KQED_ALIGN ;
+    //contract with QED kernel
+    for (int ikernel=0; ikernel<kernel_n; ikernel++){
+      double kerv1[6][4][4][4] KQED_ALIGN ;
+      double kerv2[6][4][4][4] KQED_ALIGN ;
+      double kerv3[6][4][4][4] KQED_ALIGN ;
 
-    for ( int ikernel = 0; ikernel < kernel_n; ikernel++ ){
-      KQED_LX[ikernel]( xm, ym,       kqed_t, kerv1[ikernel] );
-      KQED_LX[ikernel]( ym, xm,       kqed_t, kerv2[ikernel] );
-      KQED_LX[ikernel]( xm, xm_mi_ym, kqed_t, kerv3[ikernel] );
-    }
+      KQED_LX[ikernel]( xm, ym,       kqed_t, kerv1);
+      KQED_LX[ikernel]( ym, xm,       kqed_t, kerv2);
+      KQED_LX[ikernel]( xm, xm_mi_ym, kqed_t, kerv3);
 
-    //double ker_sum[kernel_n] = {0.};
-
-    for (int mu=0; mu<4; mu++){
-      // find dxu
-      // load u[ia] = g_5 fwd_y[iflav][ia][ix]
-      double u[12][24]; // g_5 fwd_y
-      for (int ia=0; ia<12; ia++){
-        for (int ib=0; ib<24; ib++)
-        {
-          u[ia][ib] = fwd_y[prop_idx(iflavor, ia, ix, ib, VOLUME)];
-        }
+      double sum=0;
+      for (int k=0; k<6; k++)
+      for (int mu=0; mu<4; mu++)
+      for (int nu=0; nu<4; nu++)
+      for (int lambda=0; lambda<4; lambda++){
+        sum += (kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu]) * corr_I[k][mu][nu][lambda]
+            + kerv3[k][lambda][nu][mu] * corr_II[k][mu][nu][lambda];
       }
-      for (int ia=0; ia<12; ia++) _fv_ti_eq_g5(u[ia]);
-
-      // load d[ia] = g_mu fwd_src[1-iflavor][ia][ix]
-      double d[12][24];
-      for (int ia=0; ia<12; ia++){
-        _fv_eq_gamma_ti_fv( d[ia], mu, fwd_src + prop_idx(1-iflavor, ia, ix, 0, VOLUME));
-      }
-
-      // dxu[ia][ib] = d[ib]^dagger u[ia]
-      double dxu[12][24];
-      for (int ia=0; ia<12; ia++){
-        for (int ib=0; ib<12; ib++){
-          complex w;
-          _co_eq_fv_dag_ti_fv( &w, d[ib], u[ia] );
-          dxu[ia][ib*2] = w.re;
-          dxu[ia][ib*2+1] = w.im;
-        }
-        _fv_ti_eq_g5(dxu[ia]);
-      }
-
-      for (int lambda=0; lambda<4; lambda++) {
-        // g_dxu = g_lambda dxu
-        double g_dxu[12][24];
-        for (int ia=0; ia<12; ia++) _fv_eq_gamma_ti_fv(g_dxu[ia], lambda, dxu[ia]);
-        if (ix==0 && mu==0 && lambda==0) printf("g_dxu[0][0][0][0] = %f\n", g_dxu[0][0]);
-
-        for (int k=0; k<6; k++)
-        for (int nu=0; nu<4; nu++)
-        {
-          double corr_I=0.; // the real trace
-          for (int ia=0; ia<12; ia++)
-          for (int ib=0; ib<12; ib++) {
-            double const u[2] = {g_dxu[ia][ib*2], g_dxu[ia][ib*2+1]};
-            double const v[2] = {g_dzu[k][nu][ib][ia*2], g_dzu[k][nu][ib][ia*2+1]};
-            /* complex w;
-            _co_eq_fv_dag_ti_fv(&w, g_dxu[ia], g_dzu[k][nu][ib]); */
-            corr_I += u[0] * v[0] - u[1] * v[1];
-          }
-          
-          double corr_II = 0.; // the real trace
-          int const rho = idx_comb[k][0];
-          int const sigma = idx_comb[k][1];
-          for (int ia=0; ia<12; ia++)
-          for (int ib=0; ib<12; ib++) {
-            complex const factor = {xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia],
-                          xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia+1] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia+1]};
-            corr_II += g_dxu[ia][2*ib] * factor.re - g_dxu[ia][2*ib+1] * factor.im;
-          }
-
-          if (ix==0 && lambda==0 && k==0 && nu==0 && mu==0) {
-            printf("new corr_I = %f\n", corr_I);
-            printf("new corr_II = %f\n", corr_II);
-          }
-
-          //contract with QED kernel
-          for (int ikernel=0; ikernel<kernel_n; ikernel++){
-            kernel_sum[ikernel] += (kerv1[ikernel][k][mu][nu][lambda] + kerv2[ikernel][k][nu][mu][lambda] - kerv3[ikernel][k][lambda][nu][mu]) * corr_I
-                + kerv3[ikernel][k][lambda][nu][mu] * corr_II;
-          }
-        }
-      }
+      #pragma omp atomic
+      kernel_sum[ikernel] += sum;
     }
   }
 }
@@ -1311,8 +1327,8 @@ void check_compute_4pt(size_t const vol, int const g_proc_coords[4], MPI_Comm g_
   int const y[4] = {1,2,3,4};
   int const gsx[4] = {0,0,0,0};
 
-  compute_4pt_0(fwd_src, fwd_y, g_dzu, g_dzsu, gsx, 0, xunit, y, kernel_sum_ref, kqed_t, vol, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
-  //compute_4pt(fwd_src, fwd_y, g_dzu, g_dzsu, gsx, 0, xunit, y, kernel_sum, kqed_t, vol, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);  
+  //compute_4pt_0(fwd_src, fwd_y, g_dzu, g_dzsu, gsx, 0, xunit, y, kernel_sum_ref, kqed_t, vol, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+  compute_4pt(fwd_src, fwd_y, g_dzu, g_dzsu, gsx, 0, xunit, y, kernel_sum, kqed_t, vol, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);  
 
   /* int flag = 0;
   for (int ikernel=0; ikernel<kernel_n; ikernel++){
