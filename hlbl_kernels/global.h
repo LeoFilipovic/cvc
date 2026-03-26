@@ -6,10 +6,10 @@
 #include <mpi.h>
 
 #define _GSI(x) 24*x
-#define T_global 32
-#define LX_global 32
-#define LY_global 32
-#define LZ_global 32
+#define T_global 16
+#define LX_global 16
+#define LY_global 16
+#define LZ_global 16
 
 
 #define NPROCT 1

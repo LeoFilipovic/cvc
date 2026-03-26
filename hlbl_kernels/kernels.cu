@@ -242,7 +242,7 @@ __device__ inline static void site_map_zerohalf (int xv[4], int const x[4], unsi
   return;
 }
 
-__device__ inline static void KQED_LX(int const ikernel, const double xm[4], const double ym[4],
+__device__ static void KQED_LX(int const ikernel, const double xm[4], const double ym[4],
     const struct QED_kernel_temps kqed_t, double kerv[6][4][4][4]) {
     switch (ikernel) {
         case 0:
@@ -1106,24 +1106,25 @@ __host__ void record_2p2_cuda(double *fwd_y, double *P1, double *P23, int iflavo
     return;
 }
 
-__global__ void kernel_4pt(const double * fwd_src, const double * fwd_y, double * g_dxu,
-    double const g_dzu[6][4][12][24], double const g_dzsu[6][4][12][24],
+union array {
+    double dxu[4][12][24];
+    double kerv[3][3][6][4][4][4] KQED_ALIGN;
+};
+
+__global__ void kernel_4pt(const double * fwd_src, const double * fwd_y,
+    double const* g_dzu, double const* g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
     double* kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME,
     int const g_proc_coords[4], MPI_Comm g_cart_grid, unsigned T, unsigned LX, unsigned LY, unsigned LZ, 
     unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global)
 {
-    // Shared memory for intermediate results. Total size: 17KB < 48KB limit
-    __shared__ double dxu[12][24]; //2KB
-    __shared__ double corr_I[6][4][4][4]; // 6*4*4*4*8B = 3KB
-    __shared__ double corr_II[6][4][4][4]; // 6*4*4*4*8B = 3KB
-    __shared__ double kerv1[6][4][4][4] KQED_ALIGN; // 6*4*4*4*8B = 3KB
-    __shared__ double kerv2[6][4][4][4] KQED_ALIGN; // 6*4*4*4*8B = 3KB
-    __shared__ double kerv3[6][4][4][4] KQED_ALIGN; // 6*4*4*4*8B = 3KB
+    // Shared memory for intermediate results. Total size: 23KB < 48KB limit
+    __shared__ double dxu[4][12][24];
+    __shared__ double kerv[3][3][6][4][4][4] KQED_ALIGN;
+
 
     // One lattice point per block
-    for ( unsigned int ix = 0; ix < VOLUME; ix+=gridDim.x ){
-
+    for ( unsigned int ix = blockIdx.x; ix < VOLUME; ix+=gridDim.x ){      
         int const x[4] = {(ix / (LX * LY * LZ)  + g_proc_coords[0] * T - gsx[0] + T_global) % T_global,
         (ix / (LY * LZ) % LX + g_proc_coords[1] * LX - gsx[1] + LX_global) % LX_global,
         ((ix / LZ) % LY + g_proc_coords[2] * LY - gsx[2] + LY_global) % LY_global,
@@ -1132,53 +1133,6 @@ __global__ void kernel_4pt(const double * fwd_src, const double * fwd_y, double 
         int xv[4], xvzh[4];
         site_map ( xv, x, T_global, LX_global, LY_global, LZ_global);
         site_map_zerohalf ( xvzh, x, T_global, LX_global, LY_global, LZ_global);
-        
-        if (threadIdx.x < 48){
-            int const mu = threadIdx.x / 12;
-            int const ib = threadIdx.x % 12;
-            // load d[ia] = g_mu fwd_src[1-iflavor][ia][ix]
-            double d[24];
-            _fv_eq_gamma_ti_fv(d, mu, fwd_src + prop_idx(1-iflavor, ib, ix, 0, VOLUME)); 
-            _fv_ti_eq_g5(d);
-
-            // dxu[ia][ib] = d[ib]^dagger u[ia]
-            for (int ia=0; ia<12; ia++){
-                complex w;
-                _co_eq_fv_dag_ti_fv( &w, d, fwd_y + prop_idx(iflavor, ia, ix, 0, VOLUME));
-                dxu[ia][ib*2] = w.re;
-                dxu[ia][ib*2+1] = w.im;
-            }
-            __syncthreads();
-
-            for (int lambda=0; lambda<4; lambda++){
-                // g_dxu = g_lambda dxu 
-                _fv_eq_gamma_ti_fv(g_dxu + mu*4*12*24 + lambda*12*24 + ib*24, lambda, dxu[ib]);
-            }
-        }
-
-        int const k = threadIdx.x / 64;
-        int const mu = (threadIdx.x % 64) / 16;
-        int const nu = (threadIdx.x % 16) / 4;
-        int const lambda = threadIdx.x % 4;
-        double tr1=0.; // the real trace
-        for (int ia=0; ia<12; ia++)
-        for (int ib=0; ib<12; ib++) {
-            double const u[2] = {g_dxu[mu*4*12*24 + lambda*12*24 + ia*24 + ib*2], g_dxu[mu*4*12*24 + lambda*12*24 + ia*24 + ib*2+1]};
-            double const v[2] = {g_dzu[k][nu][ib][ia*2], g_dzu[k][nu][ib][ia*2+1]};
-            tr1 += u[0] * v[0] - u[1] * v[1];
-        }
-        corr_I[k][mu][nu][lambda] = blockReduceSum(tr1);
-        
-        double tr2 = 0.; // the real trace
-        int const rho = idx_comb_d[k][0];
-        int const sigma = idx_comb_d[k][1];
-        for (int ia=0; ia<12; ia++)
-        for (int ib=0; ib<12; ib++) {
-            complex const factor = {xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia],
-                        xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia+1] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia+1]};
-            tr2 += g_dxu[mu*4*12*24 + lambda*12*24 + ia*24 + ib*2] * factor.re - g_dxu[mu*4*12*24 + lambda*12*24 + ia*24 + ib*2+1] * factor.im;
-        }
-        corr_II[k][mu][nu][lambda] = blockReduceSum(tr2);
 
         double const xm[4] = {
         xv[0] * xunit[0],
@@ -1197,18 +1151,77 @@ __global__ void kernel_4pt(const double * fwd_src, const double * fwd_y, double 
         xm[1] - ym[1],
         xm[2] - ym[2],
         xm[3] - ym[3] };
+          
+        if (threadIdx.x < 48){
+            int const mu = threadIdx.x / 12;
+            int const ia = threadIdx.x % 12;
+            double u[24]; //u[mu][ia]
+            for (int i=0; i<24; i++) u[i] = fwd_y[prop_idx(iflavor, ia, ix, i, VOLUME)];
+            _fv_ti_eq_g5(u);
+            double gu[24];
+            _fv_eq_gamma_ti_fv(gu, mu, u);
 
-        //contract with QED kernel
-        for (int ikernel=0; ikernel<kernel_n; ikernel++){
-            if (threadIdx.x == 0) KQED_LX(ikernel,  xm, ym,       kqed_t, kerv1);
-            if (threadIdx.x == 1) KQED_LX(ikernel,  ym, xm,       kqed_t, kerv2);
-            if (threadIdx.x == 2) KQED_LX(ikernel,  xm, xm_mi_ym, kqed_t, kerv3);
-            __syncthreads();
+            for (int ib=0; ib<12; ib++) {
+                complex w;
+                _co_eq_fv_dag_ti_fv( &w, fwd_src + prop_idx(1-iflavor, ib, ix, 0, VOLUME), gu);
+                dxu[mu][ia][ib*2] = w.re;
+                dxu[mu][ia][ib*2+1] = w.im;
+            }
+            _fv_ti_eq_g5(dxu[mu][ia]);
+        }
 
-            double const sum = (kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu]) * corr_I[k][mu][nu][lambda]
-                + kerv3[k][lambda][nu][mu] * corr_II[k][mu][nu][lambda];
+        else if (threadIdx.x < 48 + 9) {
+            int const ikernel = (threadIdx.x - 48) / 3;
+            int const idx = (threadIdx.x - 48) % 3;
+            if (idx == 0) KQED_LX(ikernel, xm, ym, kqed_t, kerv[ikernel][0]);
+            else if (idx == 1) KQED_LX(ikernel,  ym, xm, kqed_t, kerv[ikernel][1]);
+            else KQED_LX(ikernel,  xm, xm_mi_ym, kqed_t, kerv[ikernel][2]);
+        }
 
-            kernel_sum[k] = blockReduceSum(sum);
+        __syncthreads();
+        
+        int const k = threadIdx.x / 16;
+        int const nu = (threadIdx.x % 16) / 4;
+        int const lambda = threadIdx.x % 4;
+        double sum[3] = {0.};
+        for (int mu=0; mu<4; mu++) {
+            double g_dxu[12][24];
+            for (int ia=0; ia<12; ia++) {
+                _fv_eq_gamma_ti_fv(g_dxu[ia], lambda, dxu[mu][ia]);
+            }
+            
+            double tr1=0.; // the real trace
+            for (int ia=0; ia<12; ia++)
+            for (int ib=0; ib<12; ib++) {
+                double const u[2] = {g_dxu[ia][ib*2], g_dxu[ia][ib*2+1]};
+                double const v[2] = {g_dzu[k*4*12*24 + nu*12*24 + ib*24 + ia*2], g_dzu[k*4*12*24 + nu*12*24 + ib*24 + ia*2+1]};
+                tr1 += u[0] * v[0] - u[1] * v[1];
+            }
+            double corr_I = tr1;
+        
+            double tr2 = 0.; // the real trace
+            int const rho = idx_comb_d[k][0];
+            int const sigma = idx_comb_d[k][1];
+            for (int ia=0; ia<12; ia++)
+            for (int ib=0; ib<12; ib++) {
+                complex const factor = {xvzh[rho] * g_dzsu[sigma*4*12*24 + nu *12*24 + ib*24 + 2*ia] - xvzh[sigma] * g_dzsu[rho*4*12*24 + nu *12*24 + ib*24 + 2*ia],
+                            xvzh[rho] * g_dzsu[sigma*4*12*24 + nu *12*24 + ib*24 + 2*ia+1] - xvzh[sigma] * g_dzsu[rho*4*12*24 + nu*12*24 + ib*24 + 2*ia+1]};
+                tr2 += g_dxu[ia][ib*2] * factor.re - g_dxu[ia][ib*2+1] * factor.im;
+            }
+            double corr_II = tr2;
+
+            //contract with QED kernel
+            for (int ikernel=0; ikernel<kernel_n; ikernel++){
+                sum[ikernel] += (kerv[ikernel][0][k][mu][nu][lambda] + kerv[ikernel][1][k][nu][mu][lambda] - kerv[ikernel][2][k][lambda][nu][mu]) * corr_I
+                    + kerv[ikernel][2][k][lambda][nu][mu] * corr_II;
+            }
+            //if (threadIdx.x==0 && ix==0 && mu==0) {kernel_sum[0] = corr_I; kernel_sum[1] = corr_II; kernel_sum[2]=g_dxu[0][0];}
+        }
+        //double const sum_block = blockReduceSum(sum);
+        for (int i=0; i<3; i++) {
+            double const sum_block = blockReduceSum(sum[i]);
+            //atomicAdd_system(&kernel_sum[threadIdx.x], sum[threadIdx.x]); 
+            if (threadIdx.x == 0) atomicAdd_system(&kernel_sum[i], sum_block);
         }
     }
 }
@@ -1221,17 +1234,31 @@ __host__ void compute_4pt(
     int const g_proc_coords[4], MPI_Comm g_cart_grid, unsigned T, unsigned LX, unsigned LY, unsigned LZ, 
     unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global)
 {    
-    for (int i=0; i<kernel_n; i++) kernel_sum[i] = 0.;
-    double *g_dxu_d;
-    cudaMalloc((void **)&g_dxu_d, sizeof(double) * 6*4*12*24);
+    //for (int i=0; i<kernel_n; i++) kernel_sum[i] = 0.;
 
-    dim3 gridDim(128);
-    dim3 blockDim(384);
+    double *g_dxu_d, *kernel_sum_d, *g_dzu_d, *g_dzsu_d;
+    cudaMalloc((void **)&g_dxu_d, sizeof(double) * 4*4*12*24);
+    cudaMalloc((void **)&g_dzu_d, sizeof(double) *6*4*12*24);
+    cudaMalloc((void **)&g_dzsu_d, sizeof(double) *6*4*12*24);
+    cudaMalloc((void **)&kernel_sum_d, sizeof(double) * 3);
+    cudaMemcpy(g_dzu_d, g_dzu[0][0][0], sizeof(double)*6*4*12*24, cudaMemcpyHostToDevice);
+    cudaMemcpy(g_dzsu_d, g_dzsu[0][0][0], sizeof(double)*6*4*12*24, cudaMemcpyHostToDevice);
+    cudaMemset(kernel_sum_d, 0, sizeof(double) * 3);
 
-    kernel_4pt<<<gridDim, blockDim>>>(fwd_src, fwd_y, g_dxu_d, g_dzu, g_dzsu, gsx, 0, xunit, yv, kernel_sum, kqed_t, VOLUME,
+    dim3 gridDim(264);
+    dim3 blockDim(96);
+
+    kernel_4pt<<<gridDim, blockDim>>>(fwd_src, fwd_y, g_dzu_d, g_dzsu_d, gsx, 0, xunit, yv, kernel_sum_d, kqed_t, VOLUME,
     g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
-    
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("CUDA Error at launch: %s\n", cudaGetErrorString(err));
+    }
+    cudaDeviceSynchronize();
+    cudaMemcpy(kernel_sum, kernel_sum_d, sizeof(double) * 3, cudaMemcpyDeviceToHost);
     cudaFree(g_dxu_d);
+    cudaFree(g_dzu_d);
+    cudaFree(g_dzsu_d);
+    cudaFree(kernel_sum_d);
     return;
   }
-

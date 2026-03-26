@@ -100,3 +100,48 @@ inline void compute_2p2_pieces(
     fprintf ( stdout, "[hlbl_mII_invert_contract] Finished 2+2 pieces for n_y = %d other y points\n", n_y );
   }
 }
+
+inline void compute_4pt_contraction(
+    const double * fwd_src, const double * fwd_y,
+    double const g_dzu[6][4][12][24], double const g_dzsu[6][4][12][24],
+    const int* gsx, int iflavor, const double xunit[2], const int yv[4],
+    double kernel_sum[kernel_n], QED_kernel_temps kqed_t, unsigned VOLUME) {
+  constexpr size_t n_g_dzu = 6 * 4 * 12 * 24;
+  constexpr size_t n_g_dzsu = 4 * 4 * 12 * 24;
+  size_t sizeof_g_dzu = n_g_dzu * sizeof(double);
+  size_t sizeof_g_dzsu = n_g_dzsu * sizeof(double);
+  double* d_g_dzu = NULL;
+  double* d_g_dzsu = NULL;
+  checkCudaErrors(cudaMalloc((void**)&d_g_dzu, sizeof_g_dzu));
+  checkCudaErrors(cudaMalloc((void**)&d_g_dzsu, sizeof_g_dzsu));
+  checkCudaErrors(cudaMemcpy(
+      d_g_dzu, &g_dzu[0][0][0][0], sizeof_g_dzu, cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaMemcpy(
+      d_g_dzsu, &g_dzsu[0][0][0][0], sizeof_g_dzsu, cudaMemcpyHostToDevice));
+  double* d_kernel_sum = NULL;
+  checkCudaErrors(cudaMalloc((void**)&d_kernel_sum, kernel_n*sizeof(double)));
+  checkCudaErrors(cudaMemset(d_kernel_sum, 0, kernel_n*sizeof(double)));
+  
+  Coord d_proc_coords {
+    .t = g_proc_coords[0],
+    .x = g_proc_coords[1],
+    .y = g_proc_coords[2],
+    .z = g_proc_coords[3]
+  };
+  Geom local_geom { .T = T, .LX = LX, .LY = LY, .LZ = LZ };
+  Geom global_geom { .T = T_global, .LX = LX_global, .LY = LY_global, .LZ = LZ_global };
+  Coord d_gsx = { .t = gsx[0], .x = gsx[1], .y = gsx[2], .z = gsx[3] };
+  Coord d_yv = { .t = yv[0], .x = yv[1], .y = yv[2], .z = yv[3] };
+  Pair d_xunit = { .a = xunit[0], .b = xunit[1] };
+
+  cu_4pt_contraction(
+      d_kernel_sum, d_g_dzu, d_g_dzsu, fwd_src, fwd_y, iflavor, d_proc_coords,
+      d_gsx, d_xunit, d_yv, kqed_t, global_geom, local_geom);
+
+  checkCudaErrors(cudaMemcpy(
+      &kernel_sum[0], d_kernel_sum, kernel_n*sizeof(double), cudaMemcpyDeviceToHost));
+  checkCudaErrors(cudaFree(d_kernel_sum));
+
+  checkCudaErrors(cudaFree(d_g_dzu));
+  checkCudaErrors(cudaFree(d_g_dzsu));
+}

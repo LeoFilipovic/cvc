@@ -1305,8 +1305,8 @@ void check_compute_4pt(size_t const vol, int const g_proc_coords[4], MPI_Comm g_
   double *fwd_y = (double *) malloc(sizeof(double) * 2 * 12 * 24 * vol);
   srand(1234);
   for (int i = 0; i < 2 * 12 * 24 * vol; i++) {
-    fwd_src[i] = rand() * 2. / RAND_MAX - 1; // a random number between -1 and 1
     fwd_y[i] = rand() * 2. / RAND_MAX - 1; // a random number between -1 and 1
+    fwd_src[i] = rand() * 2. / RAND_MAX - 1; // a random number between -1 and 1
   }
 
   double g_dzu[6][4][12][24];
@@ -1340,4 +1340,7 @@ void check_compute_4pt(size_t const vol, int const g_proc_coords[4], MPI_Comm g_
   }
   if (flag) printf("4pt correctness FAILED.\n");
   else printf("4pt correctness PASSED.\n"); */
+  for (int ikernel=0; ikernel<kernel_n; ikernel++){
+    printf("kernel_sum[%d] = %f\n", ikernel, kernel_sum[ikernel]);
+  }
 }

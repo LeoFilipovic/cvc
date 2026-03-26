@@ -70,8 +70,22 @@ int main(int argc, char **argv) {
 
     int const VOL = T * LX * LY * LZ;
     double *fwd_y = (double *)malloc(2 * 12 * _GSI(VOL) * sizeof(double));
+    double *fwd_src = (double *)malloc(2 * 12 * _GSI(VOL) * sizeof(double));
+    
     srand(1234);
-    for (int i=0; i<24 * _GSI(VOL); i++) fwd_y[i] = rand()*2./RAND_MAX - 1.;
+    for (int i=0; i<24 * _GSI(VOL); i++) {
+        fwd_y[i] = rand()*2./RAND_MAX - 1.;
+        fwd_src[i] = rand()*2./RAND_MAX - 1.;
+    }
+    double g_dzu[6][4][12][24];
+    double g_dzsu[6][4][12][24];
+    for (int k=0; k<6; k++)
+    for (int nu=0; nu<4; nu++)
+    for (int ia=0; ia<12; ia++)
+    for (int ib=0; ib<24; ib++){
+        g_dzu[k][nu][ia][ib] = rand() * 2. / RAND_MAX - 1;
+        g_dzsu[k][nu][ia][ib] = rand() * 2. / RAND_MAX - 1;
+    }
 
     //rearrange fwd_y to match the kernel expectation
     /* double *fwd_y_tmp = (double *)malloc(2 * 12 * _GSI(VOL) * sizeof(double));
@@ -125,21 +139,24 @@ int main(int argc, char **argv) {
             fclose(file1);
         }
     } */
-    double g_dzu[6][4][12][24];
-    double g_dzsu[6][4][12][24];
-    for (int i=0; i<384; i++) {
-        *(g_dzu[0][0][0] + i) = 1;
-        *(g_dzsu[0][0][0] + i) = 2;
-    }
-    double kernel_sum[3] = {0};
-    compute_4pt(fwd_y, fwd_y, g_dzu, g_dzsu, gsw, 0, xunit, gycoords, kernel_sum, kqed_t, VOL,
-    g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
 
+    int const y[4] = {1,2,3,4};
+    int const gsx[4] = {0,0,0,0};
+    double kernel_sum[3] = {0};
+    compute_4pt(fwd_src, fwd_y, g_dzu, g_dzsu, gsx, 0, xunit, y, kernel_sum, kqed_t, VOL, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+    
+    //compute_4pt_contraction(fwd_src, fwd_y, g_dzu, g_dzsu, gsx, 0, xunit, y, kernel_sum, kqed_t, VOL);
+
+    for (int i=0; i<3; i++) {
+        printf("kernel_sum[%d] = %f\n", i, kernel_sum[i]);
+    }
     cudaFreeHost(P1);
     cudaFreeHost(P23);
     free(gycoords);
     free(Pi);
     free(fwd_y);
+    free(fwd_src);
+
     MPI_Finalize();
     return 0;
 }
