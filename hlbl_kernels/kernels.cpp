@@ -9,6 +9,133 @@
 #define kernel_n 3 // L0, L3, M2
 #define kernel_n_geom 3 // P2_0, P2_1, P3
 
+typedef struct {
+  double re, im;
+} complex;
+
+static const int gamma_perm[16][24] = {
+  {12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+  {19, 18, 21, 20, 23, 22, 13, 12, 15, 14, 17, 16, 7, 6, 9, 8, 11, 10, 1, 0, 3, 2, 5, 4},
+  {18, 19, 20, 21, 22, 23, 12, 13, 14, 15, 16, 17, 6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5},
+  {13, 12, 15, 14, 17, 16, 19, 18, 21, 20, 23, 22, 1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10},
+  {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
+  {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
+  {12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+  {19, 18, 21, 20, 23, 22, 13, 12, 15, 14, 17, 16, 7, 6, 9, 8, 11, 10, 1, 0, 3, 2, 5, 4},
+  {18, 19, 20, 21, 22, 23, 12, 13, 14, 15, 16, 17, 6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5},
+  {13, 12, 15, 14, 17, 16, 19, 18, 21, 20, 23, 22, 1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10},
+  {7, 6, 9, 8, 11, 10, 1, 0, 3, 2, 5, 4, 19, 18, 21, 20, 23, 22, 13, 12, 15, 14, 17, 16},
+  {6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23, 12, 13, 14, 15, 16, 17},
+  {1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14, 17, 16, 19, 18, 21, 20, 23, 22},
+  {1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14, 17, 16, 19, 18, 21, 20, 23, 22},
+  {6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23, 12, 13, 14, 15, 16, 17},
+  {7, 6, 9, 8, 11, 10, 1, 0, 3, 2, 5, 4, 19, 18, 21, 20, 23, 22, 13, 12, 15, 14, 17, 16}
+};
+static const int gamma_sgn[16][24] = {
+  {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+  {+1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1},
+  {-1, -1, -1, -1, -1, -1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1},
+  {+1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1},
+  {+1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1},
+  {+1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+  {+1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+  {-1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1},
+  {+1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1},
+  {-1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1},
+  {+1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1},
+  {-1, -1, -1, -1, -1, -1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1},
+  {+1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1},
+  {-1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1, -1, +1, -1, +1, -1, +1, +1, -1, +1, -1, +1, -1},
+  {-1, -1, -1, -1, -1, -1, +1, +1, +1, +1, +1, +1, -1, -1, -1, -1, -1, -1, +1, +1, +1, +1, +1, +1},
+  {-1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1, -1, +1}
+};
+/********************/
+
+/* s = gamma * t. */
+
+#define _fv_eq_gamma_ti_fv(s,gamma_index,t) {\
+  (s)[ 0] = (t)[gamma_perm[(gamma_index)][ 0]] * gamma_sgn[(gamma_index)][ 0];\
+  (s)[ 1] = (t)[gamma_perm[(gamma_index)][ 1]] * gamma_sgn[(gamma_index)][ 1];\
+  (s)[ 2] = (t)[gamma_perm[(gamma_index)][ 2]] * gamma_sgn[(gamma_index)][ 2];\
+  (s)[ 3] = (t)[gamma_perm[(gamma_index)][ 3]] * gamma_sgn[(gamma_index)][ 3];\
+  (s)[ 4] = (t)[gamma_perm[(gamma_index)][ 4]] * gamma_sgn[(gamma_index)][ 4];\
+  (s)[ 5] = (t)[gamma_perm[(gamma_index)][ 5]] * gamma_sgn[(gamma_index)][ 5];\
+  (s)[ 6] = (t)[gamma_perm[(gamma_index)][ 6]] * gamma_sgn[(gamma_index)][ 6];\
+  (s)[ 7] = (t)[gamma_perm[(gamma_index)][ 7]] * gamma_sgn[(gamma_index)][ 7];\
+  (s)[ 8] = (t)[gamma_perm[(gamma_index)][ 8]] * gamma_sgn[(gamma_index)][ 8];\
+  (s)[ 9] = (t)[gamma_perm[(gamma_index)][ 9]] * gamma_sgn[(gamma_index)][ 9];\
+  (s)[10] = (t)[gamma_perm[(gamma_index)][10]] * gamma_sgn[(gamma_index)][10];\
+  (s)[11] = (t)[gamma_perm[(gamma_index)][11]] * gamma_sgn[(gamma_index)][11];\
+  (s)[12] = (t)[gamma_perm[(gamma_index)][12]] * gamma_sgn[(gamma_index)][12];\
+  (s)[13] = (t)[gamma_perm[(gamma_index)][13]] * gamma_sgn[(gamma_index)][13];\
+  (s)[14] = (t)[gamma_perm[(gamma_index)][14]] * gamma_sgn[(gamma_index)][14];\
+  (s)[15] = (t)[gamma_perm[(gamma_index)][15]] * gamma_sgn[(gamma_index)][15];\
+  (s)[16] = (t)[gamma_perm[(gamma_index)][16]] * gamma_sgn[(gamma_index)][16];\
+  (s)[17] = (t)[gamma_perm[(gamma_index)][17]] * gamma_sgn[(gamma_index)][17];\
+  (s)[18] = (t)[gamma_perm[(gamma_index)][18]] * gamma_sgn[(gamma_index)][18];\
+  (s)[19] = (t)[gamma_perm[(gamma_index)][19]] * gamma_sgn[(gamma_index)][19];\
+  (s)[20] = (t)[gamma_perm[(gamma_index)][20]] * gamma_sgn[(gamma_index)][20];\
+  (s)[21] = (t)[gamma_perm[(gamma_index)][21]] * gamma_sgn[(gamma_index)][21];\
+  (s)[22] = (t)[gamma_perm[(gamma_index)][22]] * gamma_sgn[(gamma_index)][22];\
+  (s)[23] = (t)[gamma_perm[(gamma_index)][23]] * gamma_sgn[(gamma_index)][23];}
+
+/*************************************************/
+
+/* r = gamma_5 r 
+ * - assumes diagonal form of gamma_5
+ *   gamma_5 = diag(1, 1, -1, -1)
+ */
+
+#define _fv_ti_eq_g5(_r) { \
+  /* invert sign of spin components 2 and 3 */ \
+  (_r)[12] = -(_r)[12]; \
+  (_r)[13] = -(_r)[13]; \
+  (_r)[14] = -(_r)[14]; \
+  (_r)[15] = -(_r)[15]; \
+  (_r)[16] = -(_r)[16]; \
+  (_r)[17] = -(_r)[17]; \
+  (_r)[18] = -(_r)[18]; \
+  (_r)[19] = -(_r)[19]; \
+  (_r)[20] = -(_r)[20]; \
+  (_r)[21] = -(_r)[21]; \
+  (_r)[22] = -(_r)[22]; \
+  (_r)[23] = -(_r)[23]; \
+}
+
+/********************/
+
+/* c = s^dagger * t. */
+
+#define _co_eq_fv_dag_ti_fv(c,s,t) {\
+  (c)->re = \
+    (s)[ 0]*(t)[ 0] + (s)[ 1]*(t)[ 1] +\
+    (s)[ 2]*(t)[ 2] + (s)[ 3]*(t)[ 3] +\
+    (s)[ 4]*(t)[ 4] + (s)[ 5]*(t)[ 5] +\
+    (s)[ 6]*(t)[ 6] + (s)[ 7]*(t)[ 7] +\
+    (s)[ 8]*(t)[ 8] + (s)[ 9]*(t)[ 9] +\
+    (s)[10]*(t)[10] + (s)[11]*(t)[11] +\
+    (s)[12]*(t)[12] + (s)[13]*(t)[13] +\
+    (s)[14]*(t)[14] + (s)[15]*(t)[15] +\
+    (s)[16]*(t)[16] + (s)[17]*(t)[17] +\
+    (s)[18]*(t)[18] + (s)[19]*(t)[19] +\
+    (s)[20]*(t)[20] + (s)[21]*(t)[21] +\
+    (s)[22]*(t)[22] + (s)[23]*(t)[23];\
+  (c)->im =\
+    (s)[ 0]*(t)[ 1] - (s)[ 1]*(t)[ 0] +\
+    (s)[ 2]*(t)[ 3] - (s)[ 3]*(t)[ 2] +\
+    (s)[ 4]*(t)[ 5] - (s)[ 5]*(t)[ 4] +\
+    (s)[ 6]*(t)[ 7] - (s)[ 7]*(t)[ 6] +\
+    (s)[ 8]*(t)[ 9] - (s)[ 9]*(t)[ 8] +\
+    (s)[10]*(t)[11] - (s)[11]*(t)[10] +\
+    (s)[12]*(t)[13] - (s)[13]*(t)[12] +\
+    (s)[14]*(t)[15] - (s)[15]*(t)[14] +\
+    (s)[16]*(t)[17] - (s)[17]*(t)[16] +\
+    (s)[18]*(t)[19] - (s)[19]*(t)[18] +\
+    (s)[20]*(t)[21] - (s)[21]*(t)[20] +\
+    (s)[22]*(t)[23] - (s)[23]*(t)[22];}
+
+  /********************/
+
 const int idx_comb[6][2] = {
   {0,1},
   {0,2},
@@ -328,7 +455,7 @@ unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global){
     double kerv1[6][4][4][4] KQED_ALIGN ;
     double kerv2[6][4][4][4] KQED_ALIGN ;
     double kerv3[6][4][4][4] KQED_ALIGN ;
-    double kerv4[6][4][4][4] KQED_ALIGN ;
+    //double kerv4[6][4][4][4] KQED_ALIGN ;
     
     // For P2: y = (gsy - gsw)
     // For P3: y' = (gsw - gsy)
@@ -732,9 +859,7 @@ void check_p23(unsigned vol, const int* gsw, int n_y, const int *gycoords, const
       printf("P23 difference at [%d][%d][%d][%d][%d][%d]: %f VS %f diff=%e\n.",
          x, ikernel, g, rho, mu, nu, P23[x][ikernel * kernel_n_geom + g][rho][mu][nu], P23_new[x * (kernel_n * kernel_n_geom * 4 *4 *4) + ikernel * (kernel_n_geom *4 *4 *4) + g * (4*4*4) + rho * (4*4) + mu *4 + nu], diff);
     }
-    /* printf("Integral difference at [%d][%d][%d][%d][%d][%d]: %f VS %f diff=%e\n.",
-         x, ikernel, g, rho, mu, nu, P23[x][ikernel * kernel_n_geom + g][rho][mu][nu], P23_new[x][ikernel * kernel_n_geom + g][rho][mu][nu], diff);
- */  }
+  }
   if (flag) printf("P23 correctness FAILED.\n");
   else printf("P23 correctness PASSED.\n");
 
@@ -841,7 +966,7 @@ void check_P23_cuda(int const g_proc_coords[4], unsigned T, unsigned LX, unsigne
     gycoords[4*i +2] = (i+4)%LY_global;
     gycoords[4*i +3] = (i+5)%LZ_global;
   }
-  double xunit[2] = {0.1,0.2};
+  double xunit[2] = {0.1,0.1};
 
   double *Pi = (double *) malloc(sizeof(double) * 16 * vol);
   srand(1234);
@@ -869,7 +994,7 @@ void check_P23_cuda(int const g_proc_coords[4], unsigned T, unsigned LX, unsigne
     const double p0 = P23[i];
     const double p1 = P23_cuda[i];
     const double diff = p0 - p1;
-    if (diff * diff > 1e-18) {
+    if (diff * diff > 1e-26) {
       flag=1;
       printf("P23 difference at [%d], %.10f VS %.10f\n.", i, p0, p1);
     }
@@ -909,9 +1034,9 @@ void compute_4pt_0(
 
   double spinor1[24];
 
-  double kerv1[6][4][4][4] KQED_ALIGN ;
-  double kerv2[6][4][4][4] KQED_ALIGN ;
-  double kerv3[6][4][4][4] KQED_ALIGN ;
+  double kerv1[6][4][4][4]={0} KQED_ALIGN ;
+  double kerv2[6][4][4][4]={0} KQED_ALIGN ;
+  double kerv3[6][4][4][4]={0} KQED_ALIGN ;
   
 
   /***********************************************************
@@ -1269,11 +1394,25 @@ void compute_4pt(
       yv[2] * xunit[0],
       yv[3] * xunit[0] };
 
+    int const x_mi_y[4] = {
+      (x[0] - yv[0] + T_global) % T_global,
+      (x[1] - yv[1] + LX_global) % LX_global,
+      (x[2] - yv[2] + LY_global) % LY_global,
+      (x[3] - yv[3] + LZ_global) % LZ_global };
+    int xv_mi_yv[4];
+    site_map_zerohalf(xv_mi_yv, x_mi_y, T_global, LX_global, LY_global, LZ_global);
+
     double const xm_mi_ym[4] = {
+      xv_mi_yv[0] * xunit[0],
+      xv_mi_yv[1] * xunit[0],
+      xv_mi_yv[2] * xunit[0],
+      xv_mi_yv[3] * xunit[0] };
+
+    /* double const xm_mi_ym[4] = {
       xm[0] - ym[0],
       xm[1] - ym[1],
       xm[2] - ym[2],
-      xm[3] - ym[3] };
+      xm[3] - ym[3] }; */
 
     //contract with QED kernel
     for (int ikernel=0; ikernel<kernel_n; ikernel++){
@@ -1323,7 +1462,7 @@ void check_compute_4pt(size_t const vol, int const g_proc_coords[4], MPI_Comm g_
   double kernel_sum_ref[kernel_n] = {0.};
   QED_kernel_temps kqed_t;
   initialise(&kqed_t);
-  double const xunit[2] = {0.1, 0.2};
+  double const xunit[2] = {.8, 0.1};
   int const y[4] = {1,2,3,4};
   int const gsx[4] = {0,0,0,0};
 
@@ -1341,6 +1480,6 @@ void check_compute_4pt(size_t const vol, int const g_proc_coords[4], MPI_Comm g_
   if (flag) printf("4pt correctness FAILED.\n");
   else printf("4pt correctness PASSED.\n"); */
   for (int ikernel=0; ikernel<kernel_n; ikernel++){
-    printf("kernel_sum[%d] = %f\n", ikernel, kernel_sum[ikernel]);
+    printf("kernel_sum[%d] = %.16e\n", ikernel, kernel_sum[ikernel]);
   }
 }

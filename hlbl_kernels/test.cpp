@@ -61,7 +61,13 @@ int main ( int argc, char **argv )
     y_coord[i*4 + 2] = i * y[2];
     y_coord[i*4 + 3] = i * y[3];
   }
-  const double xunit[2] = {1.0, 2.1};
+
+  // set unit
+  double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
+  double const alat[2] = { 0.1, 0.00013 };  /* fm */
+  //double const xunit[2] = { mmuon * alat[0], mmuon * alat[1] };
+  double const xunit[2] = { 0.1, 0.1 };
+
   int const n_p23 = ny * kernel_n * kernel_n_geom * 4 * 4 * 4;
   double *P23 = (double *) malloc(sizeof(double) * n_p23);
   /* fill p1_1 with test data */
@@ -82,7 +88,7 @@ int main ( int argc, char **argv )
 
   //check_Pi_cuda();
   //check_P1_cuda();
-  //check_P23_cuda();
+  //check_P23_cuda(g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
 
   check_compute_4pt(VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
 

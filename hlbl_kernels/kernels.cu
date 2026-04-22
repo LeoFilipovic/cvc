@@ -1068,12 +1068,12 @@ __host__ void record_p23_cuda(double *Pi, int n_y, const int gsw[4], const int *
     cudaFree(gycoords_d);
 
     // write to file
-    /*FILE *file;
+    FILE *file;
     for (int i=0; i< n_y * kernel_n * kernel_n_geom * 4 * 4 *4; i++) {
         file = fopen("p23_cuda.dat", "a");
         fprintf(file, "%.10e\n", P23[i]);
         fclose(file);
-    }*/
+    }
     free(P23);
     return;
 }
@@ -1111,6 +1111,14 @@ union array {
     double kerv[3][3][6][4][4][4] KQED_ALIGN;
 };
 
+__device__ inline void kqed_set_zero(double kerv[6][4][4][4]) {
+    for (int i=0; i<6; i++)
+    for (int mu=0; mu<4; mu++)
+    for (int nu=0; nu<4; nu++)
+    for (int lambda=0; lambda<4; lambda++)
+        kerv[i][mu][nu][lambda] = 0.;
+}
+
 __global__ void kernel_4pt(const double * fwd_src, const double * fwd_y,
     double const* g_dzu, double const* g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
@@ -1146,12 +1154,26 @@ __global__ void kernel_4pt(const double * fwd_src, const double * fwd_y,
         yv[2] * xunit[0],
         yv[3] * xunit[0] };
 
-        double const xm_mi_ym[4] = {
+        /* double const xm_mi_ym[4] = {
         xm[0] - ym[0],
         xm[1] - ym[1],
         xm[2] - ym[2],
-        xm[3] - ym[3] };
-          
+        xm[3] - ym[3] }; */
+
+        int const x_mi_y[4] = {
+            (x[0] - yv[0] + T_global) % T_global,
+            (x[1] - yv[1] + LX_global) % LX_global,
+            (x[2] - yv[2] + LY_global) % LY_global,
+            (x[3] - yv[3] + LZ_global) % LZ_global };
+        int xv_mi_yv[4];
+        site_map_zerohalf(xv_mi_yv, x_mi_y, T_global, LX_global, LY_global, LZ_global);
+
+        double const xm_mi_ym[4] = {
+            xv_mi_yv[0] * xunit[0],
+            xv_mi_yv[1] * xunit[0],
+            xv_mi_yv[2] * xunit[0],
+            xv_mi_yv[3] * xunit[0] };
+            
         if (threadIdx.x < 48){
             int const mu = threadIdx.x / 12;
             int const ia = threadIdx.x % 12;
@@ -1173,9 +1195,19 @@ __global__ void kernel_4pt(const double * fwd_src, const double * fwd_y,
         else if (threadIdx.x < 48 + 9) {
             int const ikernel = (threadIdx.x - 48) / 3;
             int const idx = (threadIdx.x - 48) % 3;
-            if (idx == 0) KQED_LX(ikernel, xm, ym, kqed_t, kerv[ikernel][0]);
-            else if (idx == 1) KQED_LX(ikernel,  ym, xm, kqed_t, kerv[ikernel][1]);
-            else KQED_LX(ikernel,  xm, xm_mi_ym, kqed_t, kerv[ikernel][2]);
+            if (idx == 0) {
+                //set zero
+                kqed_set_zero(kerv[ikernel][0]);
+                KQED_LX(ikernel, xm, ym, kqed_t, kerv[ikernel][0]);
+            }
+            else if (idx == 1) {
+                kqed_set_zero(kerv[ikernel][1]);
+                KQED_LX(ikernel,  ym, xm, kqed_t, kerv[ikernel][1]);
+            }
+            else {
+                kqed_set_zero(kerv[ikernel][2]);
+                KQED_LX(ikernel,  xm, xm_mi_ym, kqed_t, kerv[ikernel][2]);
+            }
         }
 
         __syncthreads();
@@ -1226,9 +1258,9 @@ __global__ void kernel_4pt(const double * fwd_src, const double * fwd_y,
     }
 }
 
-__host__ void compute_4pt(
+__host__ void compute_4pt_gpu(
     const double * fwd_src, const double * fwd_y,
-    double const g_dzu[6][4][12][24], double const g_dzsu[6][4][12][24],
+    double const *g_dzu, double const *g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
     double* kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME,
     int const g_proc_coords[4], MPI_Comm g_cart_grid, unsigned T, unsigned LX, unsigned LY, unsigned LZ, 
@@ -1241,8 +1273,8 @@ __host__ void compute_4pt(
     cudaMalloc((void **)&g_dzu_d, sizeof(double) *6*4*12*24);
     cudaMalloc((void **)&g_dzsu_d, sizeof(double) *6*4*12*24);
     cudaMalloc((void **)&kernel_sum_d, sizeof(double) * 3);
-    cudaMemcpy(g_dzu_d, g_dzu[0][0][0], sizeof(double)*6*4*12*24, cudaMemcpyHostToDevice);
-    cudaMemcpy(g_dzsu_d, g_dzsu[0][0][0], sizeof(double)*6*4*12*24, cudaMemcpyHostToDevice);
+    cudaMemcpy(g_dzu_d, g_dzu, sizeof(double)*6*4*12*24, cudaMemcpyHostToDevice);
+    cudaMemcpy(g_dzsu_d, g_dzsu, sizeof(double)*6*4*12*24, cudaMemcpyHostToDevice);
     cudaMemset(kernel_sum_d, 0, sizeof(double) * 3);
 
     dim3 gridDim(264);

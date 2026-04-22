@@ -40,6 +40,8 @@ extern "C"
 #ifdef HAVE_CUDA
 #  include "cuda_lattice.h"
 #  include "hlbl_kernels/kernels.cuh"
+#else
+#  include "hlbl_kernels/kernels.h"
 #endif
 
 #define MAIN_PROGRAM
@@ -1916,7 +1918,6 @@ int main(int argc, char **argv) {
             
         }  /* end of loop on spin-color components */
       }  /* end of loop on flavor for fwd_y */
-       fprintf(stdout, "# [hlbl_mII_invert_contract] Inversion complete\n");
       //#if _WITH_TIMER
       gettimeofday ( &tb, (struct timezone *)NULL );
       show_time ( &ta, &tb, "hlbl_mII_invert_contract", "invert-y", io_proc == 2 );
@@ -1971,21 +1972,24 @@ int main(int argc, char **argv) {
         double *P23x;
         cudaHostAlloc((void **)&P23x, n_yp *  kernel_n * kernel_n_geom * 4 * 4 * 4 * sizeof(double), cudaHostAllocDefault);
 #else
-        P23x = (double *)calloc(n_yp *  kernel_n * kernel_n_geom * 4 * 4 * 4, sizeof(double));
-        P1 = (double *)calloc(4 * 4 * 4 * Lmax, sizeof(double));
-#endif   
-        /* if ( P23x == NULL )
+        double *P23x = (double *)calloc(n_yp *  kernel_n * kernel_n_geom * 4 * 4 * 4, sizeof(double));
+        double *P1 = (double *)calloc(4 * 4 * 4 * Lmax, sizeof(double)); 
+        /* double ****** P23x =init_6level_dtable ( n_yp, kernel_n*kernel_n_geom, 1, 4, 4, 4 );
+        double ***** P1 = init_5level_dtable ( 1, 4, 4, 4, Lmax );
+        if ( P23x == NULL )
+        {
+          fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
+          EXIT(123);
+        }
+
+        if ( P1 == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
           EXIT(123);
         } */
-
-        /* if ( P1 == NULL )
-        {
-          fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
-          EXIT(123);
-        } */
-
+#endif  
+fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
+                  "starting 2+2 computation\n");
         /**********************************************************
          * compute P1, P2, P3, ...
          **********************************************************/
@@ -1997,9 +2001,16 @@ int main(int argc, char **argv) {
 #if _WITH_TIMER
         gettimeofday ( &ta, (struct timezone *)NULL );
 #endif
+#ifdef HAVE_CUDA
         /* new implemnetation in hlbl_kernel */
         compute_2p2_gpu(fwd_y, P1, P23x, 0, gsy, gyp, n_yp, xunit, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
-        //compute_2p2_cpu(fwd_y, P1, P23x, gsy, 0, n_yp, gyp, xunit, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+#else
+        compute_2p2_cpu(fwd_y[0][0], P1, P23x, gsy, 0, n_yp, gyp, xunit, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+        
+        /* compute_2p2_pieces(
+            fwd_y, P1, P23x, gsy, 0, io_proc, n_yp, gyp,
+            xunit, spinor_work, kqed_t, VOLUME, Nconf); */
+#endif
 
 #if _WITH_TIMER
         gettimeofday ( &tb, (struct timezone *)NULL );
@@ -2015,7 +2026,6 @@ int main(int argc, char **argv) {
           int cdim[5] = { 1, 4, 4, 4, Lmax };
           char key[100];
           sprintf (key, "/P1/t%dx%dy%dz%d", gsy[0], gsy[1], gsy[2], gsy[3] );
-          fprintf(stdout, "[hlbl_mII_invert_contract] writing P1 value %f\n", P1[0]);
 
           exitstatus = write_h5_contraction ( P1, NULL, output_filename, key, "double", ncdim, cdim );
           if ( exitstatus != 0 )
@@ -2029,7 +2039,7 @@ int main(int argc, char **argv) {
           int ncdim = 4;
           int cdim[4] = { 1, 4, 4, 4 };
           char key[100];
-          fprintf(stdout, "[hlbl_mII_invert_contract] writing P2/P3/x values %f\n", P23x[1]);
+
           for ( int igeom = 0; igeom < 3; igeom++ )
           {
             for ( int iyp = 0; iyp < n_yp; iyp++ )
@@ -2056,6 +2066,8 @@ int main(int argc, char **argv) {
         cudaFreeHost(P1);
         cudaFreeHost(P23x);
 #else
+        /* fini_5level_dtable ( &P1 );
+        fini_6level_dtable ( &P23x ); */
         free(P1);
         free(P23x);
 #endif
@@ -2101,6 +2113,7 @@ int main(int argc, char **argv) {
             {
               double const g5sign = 1. - 2. * ( (ib/3) > 1 );
 
+              if (io_proc == 2)
               fprintf (
                   stdout, "[test_dzu] %d seq fl %d yv %3d %3d %3d %3d, k %d isnk %2d isrc %2d   %25.16e %25.16e\n",
                   g_cart_id, iflavor, yv[0], yv[1], yv[2], yv[3], k, ib, ia,
@@ -2124,6 +2137,7 @@ int main(int argc, char **argv) {
             {
               double const g5sign = 1. - 2. * ( (ib/3) > 1 );
 
+              if (io_proc == 2)
               fprintf (
                   stdout, "[test_dzsu] %d seq fl %d yv %3d %3d %3d %3d, sigma %d isnk %2d isrc %2d   %25.16e %25.16e\n",
                   g_cart_id, iflavor, yv[0], yv[1], yv[2], yv[3], sigma, ib, ia,
@@ -2147,9 +2161,13 @@ int main(int argc, char **argv) {
 #endif
 
         double local_kernel_sum[kernel_n] = { 0 };
+/* #if HAVE_CUDA
+        compute_4pt_gpu(fwd_src, fwd_y, g_dzu[0][0][0], g_dzsu[0][0][0], gsx, iflavor, xunit, yv, local_kernel_sum, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+#else */
         compute_4pt_contraction(
             fwd_src, fwd_y, g_dzu, g_dzsu, gsx, iflavor, xunit, yv,
             local_kernel_sum, kqed_t, VOLUME);
+//#endif
         for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
         {
           kernel_sum[ikernel][iflavor][iy] = local_kernel_sum[ikernel];

@@ -1,17 +1,11 @@
 #ifndef _KERNELS_CUH_
 #define _KERNELS_CUH_
 
-// change accordingly
-//#include "global.h" // for kernel test
-//#include "../global.h" // for hlbl runs
-
 //#include "cuda_lattice.h"
 extern "C" {
 #include "KQED.h"
 }
 #include <mpi.h>
-
-//#define QED_kernel_temps static QED_kernel_temps
 
 /* CUDA 2P2 BREAKDOWN */
 __host__ void compute_2p2_gpu(double *fwd_y, double *P1, double *P23, int const iflavor, int const gsw[4], 
@@ -42,9 +36,9 @@ __host__ void record_2p2_cuda(double *fwd_y, double *P1, double *P23, int iflavo
      unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global, 
      unsigned T, unsigned LX, unsigned LY, unsigned LZ);
 
-__host__ void compute_4pt(
+__host__ void compute_4pt_gpu(
     const double * fwd_src, const double * fwd_y,
-    double const g_dzu[6][4][12][24], double const g_dzsu[6][4][12][24],
+    double const *g_dzu, double const *g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
     double* kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME,
     int const g_proc_coords[4], MPI_Comm g_cart_grid, unsigned T, unsigned LX, unsigned LY, unsigned LZ, 

@@ -3,8 +3,7 @@
 extern "C" {
     #include "KQED.h"
 }
-//# include "../cvc_utils.h"
-# include "cvc_linalg.h"
+
 # include "../table_init_d.h"
 # include <mpi.h>
 
