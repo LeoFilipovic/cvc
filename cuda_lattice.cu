@@ -131,6 +131,29 @@ __device__ int coord_map_zerohalf(int xi, int Li) {
   return (xi > Li / 2) ? xi - Li : ( (xi < Li / 2) ? xi : 0 );
 }
 
+/***********************************************************
+* Calculate in which Rcut_bin (x,y) lies
+***********************************************************/
+__device__ int get_Rcut_bin(int const xv[4], int const xv_mi_yv[4], int const Rcut2_bins[CUDA_N_RCUT])
+{
+  int const x2 = xv[0]*xv[0] + xv[1]*xv[1] + xv[2]*xv[2] + xv[3]*xv[3];
+  int const xmy2 = xv_mi_yv[0]*xv_mi_yv[0] + xv_mi_yv[1]*xv_mi_yv[1] + xv_mi_yv[2]*xv_mi_yv[2] + xv_mi_yv[3]*xv_mi_yv[3];
+  int const r2 = (x2 <= xmy2) ? x2 : xmy2;
+
+  if (r2 <= Rcut2_bins[0])
+  {
+    return 0;
+  }
+
+  for (int iRcut = 1; iRcut < CUDA_N_RCUT; iRcut++)
+  {
+    if (Rcut2_bins[iRcut-1] < r2 && r2 <= Rcut2_bins[iRcut])
+    {
+      return iRcut;
+    }
+  }
+  return CUDA_N_RCUT - 1;
+}
 
 /**
  * 4D kernels: operate over CUDA_BLOCK_SIZE^4 spinor elements each.
@@ -264,7 +287,7 @@ void ker_4pt_contraction(
     double* _RESTR kernel_sum, const double* _RESTR g_dzu, const double* _RESTR g_dzsu,
     const double* _RESTR fwd_src, const double* _RESTR fwd_y, int iflavor, Coord g_proc_coords,
     Coord gsx, Pair xunit, Coord yv, QED_kernel_temps kqed_t,
-    Geom global_geom, Geom local_geom) {
+    Geom global_geom, Geom local_geom , const int* Rcut2_bins) {
 
   // Coord origin = get_thread_origin(local_geom);
   int gsx_arr[4] = {gsx.t, gsx.x, gsx.y, gsx.z};
@@ -283,7 +306,7 @@ void ker_4pt_contraction(
   double corr_I_re[6 * 4 * 4 * 4];
   double corr_II_re[6 * 4 * 4 * 4];
 
-  double kernel_sum_work[CUDA_N_QED_KERNEL] = { 0 };
+  double kernel_sum_work[CUDA_N_QED_KERNEL][CUDA_N_RCUT] = { 0 };
   double spinor_work_0[24], spinor_work_1[24];
   double kerv[6][4][4][4] KQED_ALIGN = { 0 };
 
@@ -399,11 +422,45 @@ void ker_4pt_contraction(
     double * const _corr_I_re  = corr_I_re;
     double * const _corr_II_re = corr_II_re;
 
+
+    /***********************************************************
+    * This is the implementation with the unwrapped x-y *
+    ***********************************************************/
+
+    /*
     double const xm_mi_ym[4] = {
       xm[0] - ym[0],
       xm[1] - ym[1],
       xm[2] - ym[2],
       xm[3] - ym[3] };
+    */
+
+    /***********************************************************
+    * We can wrap x-y instead *
+    ***********************************************************/
+
+    
+    int const x_mi_y[4] = {
+      (xv[0] - yv.t + global_geom_arr[0]) % global_geom_arr[0],
+      (xv[1] - yv.x + global_geom_arr[1]) % global_geom_arr[1],
+      (xv[2] - yv.y + global_geom_arr[2]) % global_geom_arr[2],
+      (xv[3] - yv.z + global_geom_arr[3]) % global_geom_arr[3] };
+    int xv_mi_yv[4] = {
+      coord_map_zerohalf(x_mi_y[0], global_geom_arr[0]),
+      coord_map_zerohalf(x_mi_y[1], global_geom_arr[1]),
+      coord_map_zerohalf(x_mi_y[2], global_geom_arr[2]),
+      coord_map_zerohalf(x_mi_y[3], global_geom_arr[3])
+    };
+
+    double const xm_mi_ym[4] = {
+      xv_mi_yv[0] * xunit.a,
+      xv_mi_yv[1] * xunit.a,
+      xv_mi_yv[2] * xunit.a,
+      xv_mi_yv[3] * xunit.a
+    };
+    
+    int iRcut = get_Rcut_bin(xv, xv_mi_yv, Rcut2_bins);
+
 
     for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
       // dtmp += (
@@ -452,14 +509,16 @@ void ker_4pt_contraction(
           }
         }
       }
-      kernel_sum_work[ikernel] += dtmp;
+      kernel_sum_work[ikernel][iRcut] += dtmp;
     }
 
   } // end coord loop
 
   // reduce (TODO faster reduce algo?)
   for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
-    atomicAdd_system(&kernel_sum[ikernel], kernel_sum_work[ikernel]);
+    for (int iRcut = 0; iRcut < CUDA_N_RCUT; ++iRcut) {
+      atomicAdd_system(&kernel_sum[ikernel*CUDA_N_RCUT + iRcut], kernel_sum_work[ikernel][iRcut]);
+    }
   }
 }
 
@@ -773,7 +832,7 @@ void cu_4pt_contraction(
     double* d_kernel_sum, const double* d_g_dzu, const double* d_g_dzsu,
     const double* fwd_src, const double* fwd_y, int iflavor, Coord proc_coords,
     Coord gsx, Pair xunit, Coord yv, QED_kernel_temps kqed_t,
-    Geom global_geom, Geom local_geom) {
+    Geom global_geom, Geom local_geom, const int* Rcut2_bins) {
   size_t T = local_geom.T;
   size_t LX = local_geom.LX;
   size_t LY = local_geom.LY;
@@ -791,7 +850,7 @@ void cu_4pt_contraction(
   // dim3 kernel_nthreads(CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D);
   ker_4pt_contraction<<<kernel_nblocks, kernel_nthreads>>>(
       d_kernel_sum, d_g_dzu, d_g_dzsu, fwd_src, fwd_y, iflavor, proc_coords,
-      gsx, xunit, yv, kqed_t, global_geom, local_geom);
+      gsx, xunit, yv, kqed_t, global_geom, local_geom, Rcut2_bins);
 }
 
 void cu_2p2_pieces(

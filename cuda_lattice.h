@@ -41,6 +41,7 @@ struct Pair {
 
 #define CUDA_N_QED_KERNEL 3
 #define CUDA_N_QED_GEOM 3
+#define CUDA_N_RCUT 8
 
 void cu_spinor_field_eq_gamma_ti_spinor_field(
     double* out, int mu, const double* in, size_t len);
@@ -53,7 +54,7 @@ void cu_4pt_contraction(
     double* d_kernel_sum, const double* d_g_dzu, const double* d_g_dzsu,
     const double* fwd_src, const double* fwd_y, int iflavor, Coord proc_coords,
     Coord gsx, Pair xunit, Coord yv, QED_kernel_temps kqed_t,
-    Geom global_geom, Geom local_geom);
+    Geom global_geom, Geom local_geom, const int* Rcut2_bins);
 void cu_2p2_pieces(
     double* d_P1, double* d_P23x, const double* fwd_y, int iflavor,
     Coord proc_coords, Coord gsw, int n_y, Coord* d_gycoords, Pair xunit,

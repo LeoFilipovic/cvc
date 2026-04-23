@@ -101,6 +101,17 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
 #endif
 #endif
 
+/***********************************************************
+ * choice of integration cutoffs
+ * NOTE: Must be consistently updated between here and CUDA.
+ ***********************************************************/
+#define Rcut_n 8
+#ifdef CUDA_N_RCUT
+#if CUDA_N_RCUT != Rcut_n
+#error "Mismatch between number of integration cuts with CUDA and CPU"
+#endif
+#endif
+
 void QED_kernel_L0P4( const double xv[4], const double yv[4], const struct QED_kernel_temps t, double kerv[6][4][4][4] )
 {
   QED_Mkernel_L2(0.4, xv, yv, t, kerv);
@@ -132,6 +143,30 @@ inline int get_Lmax()
   if ( LY_global >= Lmax ) Lmax = LY_global;
   if ( LZ_global >= Lmax ) Lmax = LZ_global;
   return Lmax;
+}
+
+/***********************************************************
+* Calculate in which Rcut_bin (x,y) lies
+***********************************************************/
+inline int get_Rcut_bin(int const xv[4], int const xv_mi_yv[4], int const Rcut2_bins[Rcut_n])
+{
+  int const x2 = xv[0]*xv[0] + xv[1]*xv[1] + xv[2]*xv[2] + xv[3]*xv[3];
+  int const xmy2 = xv_mi_yv[0]*xv_mi_yv[0] + xv_mi_yv[1]*xv_mi_yv[1] + xv_mi_yv[2]*xv_mi_yv[2] + xv_mi_yv[3]*xv_mi_yv[3];
+  int const r2 = (x2 <= xmy2) ? x2 : xmy2;
+
+  if (r2 <= Rcut2_bins[0])
+  {
+    return 0;
+  }
+
+  for (int iRcut = 1; iRcut < Rcut_n; iRcut++)
+  {
+    if (Rcut2_bins[iRcut-1] < r2 && r2 <= Rcut2_bins[iRcut])
+    {
+      return iRcut;
+    }
+  }
+  return Rcut_n - 1;
 }
 
 
@@ -505,9 +540,10 @@ inline void compute_4pt_contraction(
     const prop_t fwd_src, const prop_t fwd_y,
     double **** const g_dzu, double **** const g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
-    double kernel_sum[kernel_n], QED_kernel_temps kqed_t, unsigned VOLUME) {
+    double kernel_sum[kernel_n][Rcut_n], QED_kernel_temps kqed_t, unsigned VOLUME, const int Rcut2_bins[Rcut_n]) {
   constexpr size_t n_g_dzu = 6 * 4 * 12 * 24;
   constexpr size_t n_g_dzsu = 4 * 4 * 12 * 24;
+  double i_kernel_sum[kernel_n*Rcut_n];
   size_t sizeof_g_dzu = n_g_dzu * sizeof(double);
   size_t sizeof_g_dzsu = n_g_dzsu * sizeof(double);
   double* d_g_dzu = NULL;
@@ -519,8 +555,8 @@ inline void compute_4pt_contraction(
   checkCudaErrors(cudaMemcpy(
       d_g_dzsu, &g_dzsu[0][0][0][0], sizeof_g_dzsu, cudaMemcpyHostToDevice));
   double* d_kernel_sum = NULL;
-  checkCudaErrors(cudaMalloc((void**)&d_kernel_sum, kernel_n*sizeof(double)));
-  checkCudaErrors(cudaMemset(d_kernel_sum, 0, kernel_n*sizeof(double)));
+  checkCudaErrors(cudaMalloc((void**)&d_kernel_sum, kernel_n*Rcut_n*sizeof(double)));
+  checkCudaErrors(cudaMemset(d_kernel_sum, 0, kernel_n*Rcut_n*sizeof(double)));
   
   Coord d_proc_coords {
     .t = g_proc_coords[0],
@@ -536,14 +572,22 @@ inline void compute_4pt_contraction(
 
   cu_4pt_contraction(
       d_kernel_sum, d_g_dzu, d_g_dzsu, fwd_src, fwd_y, iflavor, d_proc_coords,
-      d_gsx, d_xunit, d_yv, kqed_t, global_geom, local_geom);
+      d_gsx, d_xunit, d_yv, kqed_t, global_geom, local_geom, Rcut2_bins);
 
   checkCudaErrors(cudaMemcpy(
-      &kernel_sum[0], d_kernel_sum, kernel_n*sizeof(double), cudaMemcpyDeviceToHost));
+      &i_kernel_sum[0], d_kernel_sum, kernel_n*Rcut_n*sizeof(double), cudaMemcpyDeviceToHost));
   checkCudaErrors(cudaFree(d_kernel_sum));
 
   checkCudaErrors(cudaFree(d_g_dzu));
   checkCudaErrors(cudaFree(d_g_dzsu));
+
+  for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
+  {
+    for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
+    {
+      kernel_sum[ikernel][iRcut] = i_kernel_sum[ikernel*Rcut_n + iRcut];
+    }
+  }
 }
 
 #else // !USE_CUDA
@@ -1026,13 +1070,13 @@ inline void compute_4pt_contraction(
     const prop_t fwd_src, const prop_t fwd_y,
     double **** const g_dzu, double **** const g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
-    double kernel_sum[kernel_n], QED_kernel_temps kqed_t, unsigned VOLUME) {
+    double kernel_sum[kernel_n][Rcut_n], QED_kernel_temps kqed_t, unsigned VOLUME, const int Rcut2_bins[Rcut_n]) {
 
 #ifdef HAVE_OPENMP
 #pragma omp parallel
 {
 #endif
-  double kernel_sum_thread[kernel_n] = { 0 };
+  double kernel_sum_thread[kernel_n][Rcut_n] = { 0 };
 
   double **** corr_I  = init_4level_dtable ( 6, 4, 4, 8 );
   double **** corr_II = init_4level_dtable ( 6, 4, 4, 8 );
@@ -1229,11 +1273,40 @@ inline void compute_4pt_contraction(
     double * const _corr_I  = corr_I[0][0][0];
     double * const _corr_II = corr_II[0][0][0];
 
+
+   /***********************************************************
+    * This is the implementation with the unwrapped x-y *
+    ***********************************************************/
+
+    /*
     double const xm_mi_ym[4] = {
       xm[0] - ym[0],
       xm[1] - ym[1],
       xm[2] - ym[2],
       xm[3] - ym[3] };
+    */
+
+    /***********************************************************
+    * We can wrap x-y instead *
+    ***********************************************************/
+
+    int const x_mi_y[4] = {
+      (xv[0] - yv[0] + T_global) % T_global,
+      (xv[1] - yv[1] + LX_global) % LX_global,
+      (xv[2] - yv[2] + LY_global) % LY_global,
+      (xv[3] - yv[3] + LZ_global) % LZ_global };
+    int xv_mi_yv[4];
+    site_map_zerohalf(xv_mi_yv, x_mi_y);
+
+    double const xm_mi_ym[4] = {
+      xv_mi_yv[0] * xunit[0],
+      xv_mi_yv[1] * xunit[0],
+      xv_mi_yv[2] * xunit[0],
+      xv_mi_yv[3] * xunit[0] };
+
+
+    int iRcut = get_Rcut_bin(xv, xv_mi_yv, Rcut2_bins);
+
 
     /***********************************************************
      * loop on kernsl
@@ -1263,7 +1336,7 @@ inline void compute_4pt_contraction(
         }
       }
 
-      kernel_sum_thread[ikernel] += dtmp;
+      kernel_sum_thread[ikernel][iRcut] += dtmp;
 
       /***********************************************************
        * BEGIN TEST
@@ -1353,7 +1426,10 @@ inline void compute_4pt_contraction(
 
   for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
   {
-    kernel_sum[ikernel] += kernel_sum_thread[ikernel];
+    for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
+    {
+      kernel_sum[ikernel][iRcut] += kernel_sum_thread[ikernel][iRcut];
+    }
   }
 
 #ifdef HAVE_OPENMP
@@ -1392,7 +1468,12 @@ void usage() {
 int main(int argc, char **argv) {
 
   double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
-  double const alat[2] = { 0.07957, 0.00013 };  /* fm */
+  double const alat[2] = {0.06816, 0.00013};  /* fm */
+  /*a values: cB64 0.079514(4) , cC80 0.06816(8) */
+
+  //int const Rcut2_bins[Rcut_n-1] = {7*7, 10*10, 14*14, 17*17, 20*20, 23*23, 27*27}; //cB64
+  // This is a choice for cB64. It might make more sense to have Rcut in fm (and constant across lattices)
+  int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80
 
   int c;
   int filename_set = 0;
@@ -1745,10 +1826,10 @@ int main(int argc, char **argv) {
     /***********************************************************
      * local kernel sum
      ***********************************************************/
-    double *** kernel_sum = init_3level_dtable ( kernel_n, 2, ymax + 1 );
+    double **** kernel_sum = init_4level_dtable ( kernel_n, 2, ymax + 1, Rcut_n );
     if ( kernel_sum == NULL ) 
     {
-      fprintf(stderr, "[hlbl_mII_invert_contract] Error from kqed initialise, status was %d %s %d\n", exitstatus, __FILE__, __LINE__);
+      fprintf(stderr, "[hlbl_mII_invert_contract] Error from kqed initialise, status was %d %s %d\n", exitstatus, __FILE__, __LINE__); // Why is this KQED??
       EXIT(19);
     }
 
@@ -2160,17 +2241,20 @@ fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
         gettimeofday ( &ta, (struct timezone *)NULL );
 #endif
 
-        double local_kernel_sum[kernel_n] = { 0 };
+        double local_kernel_sum[kernel_n][Rcut_n] = { 0 };
 /* #if HAVE_CUDA
         compute_4pt_gpu(fwd_src, fwd_y, g_dzu[0][0][0], g_dzsu[0][0][0], gsx, iflavor, xunit, yv, local_kernel_sum, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
 #else */
         compute_4pt_contraction(
             fwd_src, fwd_y, g_dzu, g_dzsu, gsx, iflavor, xunit, yv,
-            local_kernel_sum, kqed_t, VOLUME);
+            local_kernel_sum, kqed_t, VOLUME, Rcut2_bins);
 //#endif
         for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
         {
-          kernel_sum[ikernel][iflavor][iy] = local_kernel_sum[ikernel];
+          for ( int iRcut = 0; iRcut < Rcut_n; iRcut++ )
+          {
+            kernel_sum[ikernel][iflavor][iy][iRcut] = local_kernel_sum[ikernel][iRcut];
+          }
         }
 
 #if _WITH_TIMER
@@ -2191,7 +2275,7 @@ fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
               stdout,
               "# [hlbl_mII_invert_contract] kernel_sum iflavor=%d iy=%d %d: %f\n",
               iflavor, iy, ikernel,
-              kernel_sum[ikernel][iflavor][iy]);
+              kernel_sum[ikernel][iflavor][iy][iRcut]);
         }
         /***********************************************************
          * END OF TEST
@@ -2216,12 +2300,12 @@ fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
     /***********************************************************
      * sum over MPI processes
      ***********************************************************/
-    int const nitem = kernel_n * 2 * ( ymax + 1 );
+    int const nitem = kernel_n * 2 * ( ymax + 1 ) * Rcut_n;
     double * mbuffer = init_1level_dtable ( nitem );
 
-    memcpy ( mbuffer, kernel_sum[0][0], nitem * sizeof ( double ) );
+    memcpy ( mbuffer, kernel_sum[0][0][0], nitem * sizeof ( double ) );
 
-    if ( MPI_Reduce ( mbuffer, kernel_sum[0][0], nitem, MPI_DOUBLE, MPI_SUM, 0, g_cart_grid ) != MPI_SUCCESS )
+    if ( MPI_Reduce ( mbuffer, kernel_sum[0][0][0], nitem, MPI_DOUBLE, MPI_SUM, 0, g_cart_grid ) != MPI_SUCCESS )
     {
       fprintf (stderr, "[hlbl_mII_invert_contract] Error from MP_Reduce  %s %d\n", __FILE__, __LINE__ );
       EXIT(12);
@@ -2237,10 +2321,12 @@ fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
       for (int jker = 0; jker < kernel_n; ++jker) {
         for (int iflavor = 0; iflavor < 2; ++iflavor)  {
           for (int iy = 0; iy < ymax+1; ++iy) {
+            for (int iRcut = 0; iRcut < Rcut_n; ++iRcut) {
             fprintf(
                 stdout,
                 "# [hlbl_mII_invert_contract] final kernel_sum iflavor=%d iy=%d %d: %.18g\n",
-                iflavor, iy, jker, kernel_sum[jker][iflavor][iy]);
+                iflavor, iy, jker, kernel_sum[jker][iflavor][iy][iRcut]);
+            }
           }
         }
       }
@@ -2255,14 +2341,14 @@ fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
 
     if ( io_proc == 2 )
     {
-      int ncdim = 2;
-      int cdim[2] = { 2, ymax+1 };
+      int ncdim = 3;
+      int cdim[3] = { 2, ymax+1 , Rcut_n};
       char key[100];
       for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
       {
         sprintf (key, "t%dx%dy%dz%d/%s", gsx[0], gsx[1], gsx[2], gsx[3], KQED_NAME[ikernel] );
 
-        exitstatus = write_h5_contraction ( kernel_sum[ikernel][0], NULL, output_filename, key, "double", ncdim, cdim );
+        exitstatus = write_h5_contraction ( kernel_sum[ikernel][0][0], NULL, output_filename, key, "double", ncdim, cdim );
         if ( exitstatus != 0 )
         {
           fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
@@ -2271,7 +2357,7 @@ fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
       }
     }
       
-    fini_3level_dtable ( &kernel_sum );
+    fini_4level_dtable ( &kernel_sum );
 
   }  /* end of loop on source locations */
 
