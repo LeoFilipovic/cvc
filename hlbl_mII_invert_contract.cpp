@@ -1988,8 +1988,6 @@ int main(int argc, char **argv) {
           EXIT(123);
         } */
 #endif  
-fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
-                  "starting 2+2 computation\n");
         /**********************************************************
          * compute P1, P2, P3, ...
          **********************************************************/
@@ -2073,7 +2071,8 @@ fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
 #endif
         }
       } /* end of P1, P2, P3, ... */
-      
+
+#if DO_CONNECTED
       for ( int iflavor = 0; iflavor <= 1; iflavor++ ) 
       {
         /***********************************************************
@@ -2155,7 +2154,7 @@ fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
          *  - contractions for term I and II
          *  - sum with QED kernel
          ***********************************************************/
- 
+
 #if _WITH_TIMER
         gettimeofday ( &ta, (struct timezone *)NULL );
 #endif
@@ -2207,11 +2206,11 @@ fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
         fini_4level_dtable ( &g_dzsu );
 
       }  /* end of loop on flavor */
-
+#endif
     }  /* end of loop on |y| */
 
 
-
+#if DO_CONNECTED
 #ifdef HAVE_MPI
     /***********************************************************
      * sum over MPI processes
@@ -2272,6 +2271,7 @@ fprintf(stdout, "[hlbl_mII_invert_contract] yp found for this coord, "
     }
       
     fini_3level_dtable ( &kernel_sum );
+#endif
 
   }  /* end of loop on source locations */
 

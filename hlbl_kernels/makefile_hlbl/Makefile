@@ -1,8 +1,7 @@
 ###########
 
-# MODIFY DIRECTOR ACORDINGLY! 
 work=/capstor/store/cscs/userlab/lp142/software/install_dir
-srcdir=
+srcdir=/capstor/scratch/cscs/ljingjin/apps-env/cvc
 
 limedir=$(work)/c-lime
 lemondir=$(work)/other_lemon
@@ -18,7 +17,7 @@ kqeddir=$(work)/KQED/install_cpu/
 cudadir=${CUDA_HOME}
 
 
-defines= -DF_ -DHAVE_MPI -DPARALLELTXYZ -DHAVE_LIBLEMON -DHAVE_LHPC_AFF -DHAVE_TMLQCD_LIBWRAPPER -DTM_USE_MPI -DHAVE_OPENMP -DHAVE_HDF5 -DTM_USE_QUDA -D_SMEAR_QUDA -DHAVE_KQED
+defines= -DDO_CONNECTED -DF_ -DHAVE_MPI -DPARALLELTXYZ -DHAVE_LIBLEMON -DHAVE_LHPC_AFF -DHAVE_TMLQCD_LIBWRAPPER -DTM_USE_MPI -DHAVE_OPENMP -DHAVE_HDF5 -DTM_USE_QUDA -D_SMEAR_QUDA -DHAVE_KQED
 defines+=-DGPU_DIRECT_SOLVER
 # defines+=-DDUMMY_SOLVER
 gpu_defines=-DHAVE_CUDA -DUSE_CUDA
@@ -137,7 +136,7 @@ $(addsuffix .o,${CUDA_MODULES}): %.o: ${srcdir}/%.cu $(addprefix ${srcdir}/, $(a
 kernels_gpu.o: ${srcdir}/hlbl_kernels/kernels.cu $(addprefix ${srcdir}/, $(addsuffix .h, ${HEADERS})) kernels_gpu.d $(srcdir)/hlbl_kernels/kernels.cuh kernels_gpu.d
 	${CUDA_COMPILE} ${OPTARGS} -c $<
 
-$(addsuffix .o,${PROGRAM}): %.o: ${srcdir}/%.cpp %.d
+$(addsuffix .o,${PROGRAM}): %.o: ${srcdir}/%.cpp  %.d
 	${COMPILE} ${OPTARGS} -c $< 
 
 $(addsuffix .gpu.o,${PROGRAM}): %.gpu.o: ${srcdir}/%.cpp %.d
@@ -146,7 +145,7 @@ $(addsuffix .gpu.o,${PROGRAM}): %.gpu.o: ${srcdir}/%.cpp %.d
 ${PROGRAM}: %: %.o ${srcdir}/gitversion.cpp $(addsuffix .o,${MODULES}) kernels_cpu.o
 	${LINK}  $(addsuffix .o,${MODULES}) kernels_cpu.o $@.o $(LDFLAGS)
 
-$(addsuffix .gpu.dlink,${PROGRAM}): %.gpu.dlink: %.gpu.o ${srcdir}/gitversion.cpp $(addsuffix .o,${MODULES} ${CUDA_MODULES}) $(DEVICE_LIB_DEPS)
+$(addsuffix .gpu.dlink,${PROGRAM}): %.gpu.dlink: %.gpu.o ${srcdir}/gitversion.cpp $(addsuffix .o,${MODULES} ${CUDA_MODULES}) kernels_gpu.o $(DEVICE_LIB_DEPS)
 	${CUDA_LINK} kernels_gpu.o $(addsuffix .o,${MODULES} ${CUDA_MODULES}) $(DEVICE_LIBS) $<
 
 $(addsuffix .gpu,${PROGRAM}): %.gpu: %.gpu.o %.gpu.dlink ${srcdir}/gitversion.cpp $(addsuffix .o,${MODULES} ${CUDA_MODULES}) kernels_gpu.o
