@@ -754,12 +754,12 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
             ( gsy[2] - gsw[2] + static_cast<int>(LY_global) ) % static_cast<int>(LY_global),
             ( gsy[3] - gsw[3] + static_cast<int>(LZ_global) ) % static_cast<int>(LZ_global)
         };
-        int yv[4];
+        /* int yv[4];
         site_map_zerohalf ( yv, y, T_global, LX_global, LY_global, LZ_global );
 
         double const ym[4] = {yv[0] * xunit[0], yv[1] * xunit[0], yv[2] * xunit[0], yv[3] * xunit[0] };
         double const ym_minus[4] = { -yv[0] * xunit[0], -yv[1] * xunit[0], -yv[2] * xunit[0], -yv[3] * xunit[0] };
-
+         */
         // parallelise over ikernel
         int ikernel = blockIdx.y;
 
@@ -781,24 +781,24 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
             ((ix / static_cast<int>(LZ)) % static_cast<int>(LY) - gsw[2]  + g_proc_coords[2] * static_cast<int>(LY) + static_cast<int>(LY_global)) % static_cast<int>(LY_global),
             (ix % static_cast<int>(LZ) - gsw[3] + g_proc_coords[3] * static_cast<int>(LZ) + static_cast<int>(LZ_global)) % static_cast<int>(LZ_global)};
 
-            int xv[4];
+            /* int xv[4];
             site_map_zerohalf ( xv, x, T_global, LX_global, LY_global, LZ_global );
 
             double const xm[4] = {xv[0] * xunit[0], xv[1] * xunit[0], xv[2] * xunit[0], xv[3] * xunit[0] };
-            double const xm_mi_ym[4] = {xm[0] - ym[0], xm[1] - ym[1], xm[2] - ym[2], xm[3] - ym[3] };
+            double const xm_mi_ym[4] = {xm[0] - ym[0], xm[1] - ym[1], xm[2] - ym[2], xm[3] - ym[3] }; */
             
-            // revert to old xm_mi_ym
-            /* int const x_mi_y[4] = {
+            // wrapped (minimum image)
+            int const x_mi_y[4] = {
                 (x[0] - y[0] + static_cast<int>(T_global)) % static_cast<int>(T_global), 
                 (x[1] - y[1] + static_cast<int>(LX_global)) % LX_global, 
                 (x[2] - y[2] + static_cast<int>(LY_global)) % LY_global, 
                 (x[3] - y[3] + static_cast<int>(LZ_global)) % LZ_global};
             int xmyv[4];
             site_map_zerohalf(xmyv, x_mi_y, T_global, LX_global, LY_global, LZ_global);
-            double xm_mi_ym[4] = {xmyv[0] * xunit[0], xmyv[1] * xunit[1], xmyv[2] * xunit[2], xmyv[0] * xunit[3]};
-             */
+            double xm_mi_ym[4] = {xmyv[0] * xunit[0], xmyv[1] * xunit[0], xmyv[2] * xunit[0], xmyv[3] * xunit[0]};
+            
 
-            double kerv3[6][4][4][4] KQED_ALIGN ;
+            /* double kerv3[6][4][4][4] KQED_ALIGN ;
             KQED_LX(ikernel, xm_mi_ym, ym_minus, kqed_t, kerv3);
             #pragma unroll
             for (int mu=0; mu<4; mu++)
@@ -821,7 +821,7 @@ unsigned const T_global, unsigned const LX_global, unsigned const LY_global, uns
             
                 // k=5: {2,3}
                 local_p3[2*16 + 3*4 + nu] += kerv3[5][mu][lambda][nu] * pix[mu*4+lambda];
-            }
+            } */
         }
 
         #pragma unroll
@@ -934,32 +934,7 @@ __host__ void compute_2p2_gpu(double *fwd_y, double *P1, double *P23, int iflavo
         fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
         MPI_Abort(g_cart_grid, -1);
     }
-    
-    /* if(MPI_Iallreduce(MPI_IN_PLACE, P23_d, size_p23, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[0]) != MPI_SUCCESS) {
-        fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
-        MPI_Abort(g_cart_grid, -1);
-    } */
 
-
-    /* if(MPI_Iallreduce(MPI_IN_PLACE, P1_d, size_p1, MPI_DOUBLE, MPI_SUM, g_cart_grid, &request[1]) != MPI_SUCCESS) {
-        fprintf(stderr, "[] Error from MPI_Iallreduce %s %d\n", __FILE__, __LINE__ );
-        MPI_Abort(g_cart_grid, -1);
-    } */
-
-    /* --- 5. CLEANUP --- */
-    // Wait for network to finish
-    /* MPI_Wait(&request[3], MPI_STATUS_IGNORE);
-    cudaMemcpyAsync(P1, P1_d, size_p1 * sizeof(double), cudaMemcpyDeviceToHost, stream_p1);
-
-    MPI_Wait(&request[0], MPI_STATUSES_IGNORE);
-    cudaMemcpyAsync(P23, P23_d, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p20);
-
-    MPI_Wait(&request[1], MPI_STATUSES_IGNORE);
-    cudaMemcpyAsync(P23 + size_p23/3, P23_d + size_p23/3, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p21);
-
-    MPI_Wait(&request[2], MPI_STATUSES_IGNORE);
-    cudaMemcpyAsync(P23 + 2*size_p23/3, P23_d + 2*size_p23/3, size_p23/3 * sizeof(double), cudaMemcpyDeviceToHost, stream_p3);
- */
     MPI_Waitall(4, request, MPI_STATUSES_IGNORE);
 
     cudaFree(Pi_d);
@@ -1088,7 +1063,7 @@ __host__ void record_2p2_cuda(double *fwd_y, double *P1, double *P23, int iflavo
     compute_2p2_gpu(fwd_y, P1, P23, iflavor, gsw, gycoords, n_y, xunit, kqed_t, VOLUME, g_proc_coords, g_cart_grid, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
 
     // write to file
-    /* if (g_proc_coords[0]==0 && g_proc_coords[1]==0 && g_proc_coords[2]==0 && g_proc_coords[3]==0) {
+    if (g_proc_coords[0]==0 && g_proc_coords[1]==0 && g_proc_coords[2]==0 && g_proc_coords[3]==0) {
 
         FILE *file23;
         for (int i=0; i< n_y * kernel_n * kernel_n_geom * 4 * 4 *4; i++) {
@@ -1102,7 +1077,7 @@ __host__ void record_2p2_cuda(double *fwd_y, double *P1, double *P23, int iflavo
             fprintf(file1, "%.10e\n", P1[i]);
             fclose(file1);
         }
-    } */
+    }
     return;
 }
 
