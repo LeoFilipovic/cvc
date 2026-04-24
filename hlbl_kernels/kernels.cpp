@@ -471,11 +471,6 @@ unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global){
     site_map_zerohalf ( yv, y, T_global, LX_global, LY_global, LZ_global);
     for ( unsigned int ix = 0; ix < VOLUME; ix++ )
     {
-      /* int const x[4] = {
-        ( g_lexic2coords[ix][0] + g_proc_coords[0] * T  - gsw[0] + T_global  ) % T_global,
-        ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
-        ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
-        ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global }; */
       int const x[4] = {(ix / (LX * LY * LZ) + g_proc_coords[0] * T- gsw[0] + T_global) % T_global,
       (ix / (LY * LZ) % LX + g_proc_coords[1] * LX - gsw[1] + LX_global) % LX_global,
       ((ix / LZ) % LY + g_proc_coords[2] * LY - gsw[2] + LY_global) % LY_global,
@@ -508,11 +503,28 @@ unsigned T_global, unsigned LX_global, unsigned LY_global, unsigned LZ_global){
         -yv[2] * xunit[0],
         -yv[3] * xunit[0] };
 
-      double const xm_mi_ym[4] = {
+      /* double const xm_mi_ym[4] = {
         xm[0] - ym[0],
         xm[1] - ym[1],
         xm[2] - ym[2],
-        xm[3] - ym[3] };
+        xm[3] - ym[3] }; */
+
+      // wrapped (minimum image)
+      int const x_mi_y[4] = {
+        (x[0] - y[0] + T_global) % T_global,
+        (x[1] - y[1] + LX_global) % LX_global,
+        (x[2] - y[2] + LY_global) % LY_global,
+        (x[3] - y[3] + LZ_global) % LZ_global };
+      int xv_mi_yv[4];
+      site_map_zerohalf(xv_mi_yv, x_mi_y, T_global, LX_global, LY_global, LZ_global);
+
+      double const xm_mi_ym[4] = {
+        xv_mi_yv[0] * xunit[0],
+        xv_mi_yv[1] * xunit[0],
+        xv_mi_yv[2] * xunit[0],
+        xv_mi_yv[3] * xunit[0] };
+
+      
       double const ym_mi_xm[4] = {
         ym[0] - xm[0],
         ym[1] - xm[1],
@@ -615,11 +627,6 @@ QED_kernel_temps kqed_t, unsigned VOLUME, int const g_proc_coords[4], unsigned T
       double local_p2_1[64]={0};
       double local_p3[64]={0};
       for ( unsigned int ix = 0; ix < VOLUME; ix++ ){
-        /* int const x[4] = {
-          ( g_lexic2coords[ix][0] + g_proc_coords[0] * T  - gsw[0] + T_global  ) % T_global,
-          ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
-          ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
-          ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global }; */
         int const x[4] = {(ix / (LX * LY * LZ)  + g_proc_coords[0] * T - gsw[0] + T_global) % T_global,
         (ix / (LY * LZ) % LX + g_proc_coords[1] * LX - gsw[1] + LX_global) % LX_global,
         ((ix / LZ) % LY + g_proc_coords[2] * LY - gsw[2] + LY_global) % LY_global,
@@ -639,11 +646,26 @@ QED_kernel_temps kqed_t, unsigned VOLUME, int const g_proc_coords[4], unsigned T
           xv[2] * xunit[0],
           xv[3] * xunit[0] };
 
-        double const xm_mi_ym[4] = {
+        /* double const xm_mi_ym[4] = {
           xm[0] - ym[0],
           xm[1] - ym[1],
           xm[2] - ym[2],
           xm[3] - ym[3] };
+         */
+        // wrapped (minimum image)
+        int const x_mi_y[4] = {
+          (x[0] - y[0] + T_global) % T_global,
+          (x[1] - y[1] + LX_global) % LX_global,
+          (x[2] - y[2] + LY_global) % LY_global,
+          (x[3] - y[3] + LZ_global) % LZ_global };
+        int xv_mi_yv[4];
+        site_map_zerohalf(xv_mi_yv, x_mi_y, T_global, LX_global, LY_global, LZ_global);
+
+        double const xm_mi_ym[4] = {
+          xv_mi_yv[0] * xunit[0],
+          xv_mi_yv[1] * xunit[0],
+          xv_mi_yv[2] * xunit[0],
+          xv_mi_yv[3] * xunit[0] };
 
       
         KQED_LX[ikernel]( xm, ym,             kqed_t, kerv1 );
@@ -841,11 +863,11 @@ void check_p23(unsigned vol, const int* gsw, int n_y, const int *gycoords, const
   for (int x=0; x<vol; x++){
     pi_rearrange[x*16 + mu*4 + nu] = pi[mu*4*vol + nu*vol + x];
   }
-  struct QED_kernel_temps kqed_t_new ;
-  initialise(&kqed_t_new);
-  compute_p23(pi_rearrange, P23_new, gsw, n_y, gycoords, xunit, kqed_t_new, vol, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
+  /* struct QED_kernel_temps kqed_t_new ;
+  initialise(&kqed_t_new); */
+  compute_p23(pi_rearrange, P23_new, gsw, n_y, gycoords, xunit, kqed_t, vol, g_proc_coords, T, LX, LY, LZ, T_global, LX_global, LY_global, LZ_global);
 
-  // Add correctness check here if needed
+  // correctness check here
   int flag = 0;
   for (int x=0; x<n_y; x++)
   for (int ikernel=0; ikernel<kernel_n; ikernel++)
@@ -853,12 +875,12 @@ void check_p23(unsigned vol, const int* gsw, int n_y, const int *gycoords, const
   for (int rho=0; rho<4; rho++)
   for (int mu=0; mu<4; mu++)
   for (int nu=0; nu<4; nu++){
-    const double diff = P23[x][ikernel * kernel_n_geom + g][rho][mu][nu] - P23_new[x * (kernel_n * kernel_n_geom * 4 *4 *4) + ikernel * (kernel_n_geom *4 *4 *4) + g * (4*4*4) + rho * (4*4) + mu *4 + nu];
+    const double diff = P23[x][ikernel * kernel_n_geom + g][rho][mu][nu] - P23_new[g*n_y*kernel_n*64 + ikernel*n_y*64 + x*64 + rho*16 + mu*4 + nu];
     if (diff * diff > 1e-26) {
       flag=1;
       printf("P23 difference at [%d][%d][%d][%d][%d][%d]: %f VS %f diff=%e\n.",
          x, ikernel, g, rho, mu, nu, P23[x][ikernel * kernel_n_geom + g][rho][mu][nu], P23_new[x * (kernel_n * kernel_n_geom * 4 *4 *4) + ikernel * (kernel_n_geom *4 *4 *4) + g * (4*4*4) + rho * (4*4) + mu *4 + nu], diff);
-    }
+    }    
   }
   if (flag) printf("P23 correctness FAILED.\n");
   else printf("P23 correctness PASSED.\n");
@@ -1049,15 +1071,6 @@ void compute_4pt_0(
 #pragma omp for
   for ( unsigned int ix = 0; ix < VOLUME; ix++ )
   {
-    /* int x[4] = { g_proc_coords[0]*T  + g_lexic2coords[ix][0],
-                 g_proc_coords[1]*LX + g_lexic2coords[ix][1],
-                 g_proc_coords[2]*LY + g_lexic2coords[ix][2],
-                 g_proc_coords[3]*LZ + g_lexic2coords[ix][3] };
-
-    x[0] = ( x[0] - gsx[0] + T_global  ) % T_global;
-    x[1] = ( x[1] - gsx[1] + LX_global ) % LX_global;
-    x[2] = ( x[2] - gsx[2] + LY_global ) % LY_global;
-    x[3] = ( x[3] - gsx[3] + LZ_global ) % LZ_global; */
     int const x[4] = {(ix / (LX * LY * LZ)  + g_proc_coords[0] * T - gsx[0] + T_global) % T_global,
     (ix / (LY * LZ) % LX + g_proc_coords[1] * LX - gsx[1] + LX_global) % LX_global,
     ((ix / LZ) % LY + g_proc_coords[2] * LY - gsx[2] + LY_global) % LY_global,
@@ -1219,11 +1232,27 @@ void compute_4pt_0(
     printf("first element of corr_I = %f\n", corr_I[0][0][0][0]);
     printf("first element of corr_II = %f\n", corr_II[0][0][0][0]);
     }
-    double const xm_mi_ym[4] = {
+    /* double const xm_mi_ym[4] = {
       xm[0] - ym[0],
       xm[1] - ym[1],
       xm[2] - ym[2],
-      xm[3] - ym[3] };
+      xm[3] - ym[3] }; */
+      
+    // wrapped (minimum image)
+    int const x_mi_y[4] = {
+      (x[0] - yv[0] + T_global) % T_global,
+      (x[1] - yv[1] + LX_global) % LX_global,
+      (x[2] - yv[2] + LY_global) % LY_global,
+      (x[3] - yv[3] + LZ_global) % LZ_global };
+    int xv_mi_yv[4];
+    site_map_zerohalf(xv_mi_yv, x_mi_y, T_global, LX_global, LY_global, LZ_global);
+
+    double const xm_mi_ym[4] = {
+      xv_mi_yv[0] * xunit[0],
+      xv_mi_yv[1] * xunit[0],
+      xv_mi_yv[2] * xunit[0],
+      xv_mi_yv[3] * xunit[0] };
+
 
     /***********************************************************
      * loop on kernsl
