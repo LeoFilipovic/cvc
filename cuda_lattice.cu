@@ -245,18 +245,19 @@ __device__
 void KQED_LX(
     int ikernel, const double xm[4], const double ym[4],
     const struct QED_kernel_temps kqed_t, double kerv[6][4][4][4]) {
-#if CUDA_N_QED_KERNEL != 3
+#if CUDA_N_QED_KERNEL != 1
   #error "Number of QED kernels does not match implementation"
 #endif
   if (ikernel == 0) {
-    QED_kernel_L0( xm, ym, kqed_t, kerv );
-  }
-  else if (ikernel == 1) {
-    QED_kernel_L3( xm, ym, kqed_t, kerv );
-  }
-  else {
+    // QED_kernel_L0( xm, ym, kqed_t, kerv );
     QED_Mkernel_L2( 0.4, xm, ym, kqed_t, kerv );
   }
+  // else if (ikernel == 1) {
+  //   QED_kernel_L3( xm, ym, kqed_t, kerv );
+  // }
+  // else {
+  //   QED_Mkernel_L2( 0.4, xm, ym, kqed_t, kerv );
+  // }
 }
 
 __global__
@@ -608,34 +609,55 @@ void ker_2p2_pieces(
         -xv[2] * xunit.a,
         -xv[3] * xunit.a };
         
-      // int const x_mi_y[4] = {
-      //   (z[0] - y[0] + global_geom_arr[0]) % global_geom_arr[0],
-      //   (z[1] - y[1] + global_geom_arr[1]) % global_geom_arr[1],
-      //   (z[2] - y[2] + global_geom_arr[2]) % global_geom_arr[2],
-      //   (z[3] - y[3] + global_geom_arr[2]) % global_geom_arr[3]
-      // };
-      // int xv_mi_yv[4] = {
-      //   coord_map_zerohalf(x_mi_y[0], global_geom_arr[0]),
-      //   coord_map_zerohalf(x_mi_y[1], global_geom_arr[1]),
-      //   coord_map_zerohalf(x_mi_y[2], global_geom_arr[2]),
-      //   coord_map_zerohalf(x_mi_y[3], global_geom_arr[3])
-      // };
-      // double const xm_mi_ym[4] = {
-      //   xv_mi_yv[0] * xunit.a,
-      //   xv_mi_yv[1] * xunit.a,
-      //   xv_mi_yv[2] * xunit.a,
-      //   xv_mi_yv[3] * xunit.a
-      // };
+      int const x_mi_y[4] = {
+        (z[0] - y[0] + global_geom_arr[0]) % global_geom_arr[0],
+        (z[1] - y[1] + global_geom_arr[1]) % global_geom_arr[1],
+        (z[2] - y[2] + global_geom_arr[2]) % global_geom_arr[2],
+        (z[3] - y[3] + global_geom_arr[2]) % global_geom_arr[3]
+      };
+      int xv_mi_yv[4] = {
+        coord_map_zerohalf(x_mi_y[0], global_geom_arr[0]),
+        coord_map_zerohalf(x_mi_y[1], global_geom_arr[1]),
+        coord_map_zerohalf(x_mi_y[2], global_geom_arr[2]),
+        coord_map_zerohalf(x_mi_y[3], global_geom_arr[3])
+      };
       double const xm_mi_ym[4] = {
-        xm[0] - ym[0],
-        xm[1] - ym[1],
-        xm[2] - ym[2],
-        xm[3] - ym[3] };
+        xv_mi_yv[0] * xunit.a,
+        xv_mi_yv[1] * xunit.a,
+        xv_mi_yv[2] * xunit.a,
+        xv_mi_yv[3] * xunit.a
+      };
+
+      int const y_mi_x[4] = {
+        (-z[0] + y[0] + global_geom_arr[0]) % global_geom_arr[0],
+        (-z[1] + y[1] + global_geom_arr[1]) % global_geom_arr[1],
+        (-z[2] + y[2] + global_geom_arr[2]) % global_geom_arr[2],
+        (-z[3] + y[3] + global_geom_arr[2]) % global_geom_arr[3]
+      };
+      int yv_mi_xv[4] = {
+        coord_map_zerohalf(y_mi_x[0], global_geom_arr[0]),
+        coord_map_zerohalf(y_mi_x[1], global_geom_arr[1]),
+        coord_map_zerohalf(y_mi_x[2], global_geom_arr[2]),
+        coord_map_zerohalf(y_mi_x[3], global_geom_arr[3])
+      };
       double const ym_mi_xm[4] = {
-        ym[0] - xm[0],
-        ym[1] - xm[1],
-        ym[2] - xm[2],
-        ym[3] - xm[3] };
+        yv_mi_xv[0] * xunit.a,
+        yv_mi_xv[1] * xunit.a,
+        yv_mi_xv[2] * xunit.a,
+        yv_mi_xv[3] * xunit.a
+      };
+      //wrap everything
+
+      // double const xm_mi_ym[4] = {
+      //   xm[0] - ym[0],
+      //   xm[1] - ym[1],
+      //   xm[2] - ym[2],
+      //   xm[3] - ym[3] };
+      // double const ym_mi_xm[4] = {
+      //   ym[0] - xm[0],
+      //   ym[1] - xm[1],
+      //   ym[2] - xm[2],
+      //   ym[3] - xm[3] };
 
       for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
         double local_P2_0[4][4][4] = { 0 };
@@ -691,10 +713,11 @@ void ker_2p2_pieces(
             for ( int mu = 0; mu < 4; mu++ ) {
               for ( int lambda = 0; lambda < 4; lambda++ ) {
                 local_P4_0[rho][sigma][nu] += kerv[k][nu][lambda][mu] * pimn[mu][lambda];
+                local_P4_1[rho][sigma][nu] += (xv[rho]) * kerv[k][nu][lambda][mu] * pimn[mu][lambda];
               }
             }
-            local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (yv[rho]-xv[rho]);
-            local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (yv[sigma]-xv[sigma]);
+            // local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (yv[rho]-xv[rho]);
+            // local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (yv[sigma]-xv[sigma]);
           }
         }
 

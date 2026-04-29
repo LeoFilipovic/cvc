@@ -82,7 +82,7 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
  * choice of KQED kernels
  * NOTE: Must be consistently updated between here and CUDA.
  ***********************************************************/
-#define kernel_n 3
+#define kernel_n 1
 #ifdef CUDA_N_QED_KERNEL
 #if CUDA_N_QED_KERNEL != kernel_n
 #error "Mismatching number of QED kernels between CUDA and CPU"
@@ -102,12 +102,13 @@ void QED_kernel_L0P4( const double xv[4], const double yv[4], const struct QED_k
 }
 
 QED_kernel_LX_ptr KQED_LX[kernel_n] = {
-  QED_kernel_L0,
-  QED_kernel_L3,
+  // QED_kernel_L0,
+  // QED_kernel_L3,
   QED_kernel_L0P4,
 };
 const char * KQED_NAME[kernel_n] = {
-  "L0", "L3", "LLambda0.4"
+  // "L0", "L3", 
+  "LLambda0.4"
 };
 const char * KQED_GEOM_NAME[kernel_n_geom] = {
   "P2_0", "P2_1", "P3", "P4_0", "P4_1"
@@ -775,28 +776,42 @@ inline void compute_2p2_pieces(
         -yv[2] * xunit[0],
         -yv[3] * xunit[0] };
 
-      // int const x_mi_y[4] = {
-      //   (x[0] - y[0] + T_global) % T_global,
-      //   (x[1] - y[1] + LX_global) % LX_global,
-      //   (x[2] - y[2] + LY_global) % LY_global,
-      //   (x[3] - y[3] + LZ_global) % LZ_global };
-      // int xv_mi_yv[4];
-      // site_map_zerohalf(xv_mi_yv, x_mi_y);
-      // double const xm_mi_ym[4] = {
-      //   xv_mi_yv[0] * xunit[0],
-      //   xv_mi_yv[1] * xunit[0],
-      //   xv_mi_yv[2] * xunit[0],
-      //   xv_mi_yv[3] * xunit[0] };
+      int const x_mi_y[4] = {
+        (x[0] - y[0] + T_global) % T_global,
+        (x[1] - y[1] + LX_global) % LX_global,
+        (x[2] - y[2] + LY_global) % LY_global,
+        (x[3] - y[3] + LZ_global) % LZ_global };
+      int xv_mi_yv[4];
+      site_map_zerohalf(xv_mi_yv, x_mi_y);
       double const xm_mi_ym[4] = {
-        xm[0] - ym[0],
-        xm[1] - ym[1],
-        xm[2] - ym[2],
-        xm[3] - ym[3] };
+        xv_mi_yv[0] * xunit[0],
+        xv_mi_yv[1] * xunit[0],
+        xv_mi_yv[2] * xunit[0],
+        xv_mi_yv[3] * xunit[0] };
+
+      int const y_mi_x[4] = {
+        (-x[0] + y[0] + T_global) % T_global,
+        (-x[1] + y[1] + LX_global) % LX_global,
+        (-x[2] + y[2] + LY_global) % LY_global,
+        (-x[3] + y[3] + LZ_global) % LZ_global };
+      int yv_mi_xv[4];
+      site_map_zerohalf(yv_mi_xv, y_mi_x);
       double const ym_mi_xm[4] = {
-        ym[0] - xm[0],
-        ym[1] - xm[1],
-        ym[2] - xm[2],
-        ym[3] - xm[3] };
+        yv_mi_xv[0] * xunit[0],
+        yv_mi_xv[1] * xunit[0],
+        yv_mi_xv[2] * xunit[0],
+        yv_mi_xv[3] * xunit[0] };
+
+      // double const xm_mi_ym[4] = {
+      //   xm[0] - ym[0],
+      //   xm[1] - ym[1],
+      //   xm[2] - ym[2],
+      //   xm[3] - ym[3] };
+      // double const ym_mi_xm[4] = {
+      //   ym[0] - xm[0],
+      //   ym[1] - xm[1],
+      //   ym[2] - xm[2],
+      //   ym[3] - xm[3] };
 
       for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
       {
@@ -829,13 +844,16 @@ inline void compute_2p2_pieces(
                 // P4_0
                 local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu] +=
                     kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                // P4_1
+                local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] +=
+                    (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
               }
             }
-            // P4_1
-            local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] =
-                (yv[rho]-xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu];
-            local_P23x[yi][ikernel*kernel_n_geom + 4][sigma][rho][nu] =
-                (yv[sigma]-xv[sigma]) * (-local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu]);
+            // old P4_1
+            // local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] =
+            //     (yv[rho]-xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu];
+            // local_P23x[yi][ikernel*kernel_n_geom + 4][sigma][rho][nu] =
+            //     (yv[sigma]-xv[sigma]) * (-local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu]);
           }
         }
       }
@@ -1371,7 +1389,7 @@ void usage() {
 int main(int argc, char **argv) {
 
   double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
-  double const alat[2] = { 0.07957, 0.00013 };  /* fm */
+  double const alat[2] = { 0.079514, 0.00013 };  /* fm */
 
   int c;
   int filename_set = 0;

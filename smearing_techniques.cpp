@@ -36,7 +36,8 @@ namespace cvc {
  ************************************************************/
 int APE_Smearing(double *smeared_gauge_field, double const APE_smearing_alpha, int const APE_smearing_niter) {
 
-#if ( defined HAVE_TMLQCD_LIBWRAPPER ) && ( defined _SMEAR_QUDA )
+// #if ( defined HAVE_TMLQCD_LIBWRAPPER ) && ( defined _SMEAR_QUDA )
+#if 0
   /***********************************************************
    * call  library function wrapper
    ***********************************************************/
@@ -276,7 +277,8 @@ int Jacobi_Smearing(double *smeared_gauge_field, double *psi, int const N, doubl
     return ( 0 );
   }
 
-#if ( defined HAVE_TMLQCD_LIBWRAPPER ) && ( defined _SMEAR_QUDA )
+// #if ( defined HAVE_TMLQCD_LIBWRAPPER ) && ( defined _SMEAR_QUDA )
+#if 0
    if ( g_cart_id == 0 ) fprintf(stdout, "# [Jacobi_Smearing] calling _performWuppertalnStep\n");
 
   _performWuppertalnStep ( psi, psi, N, kappa );
