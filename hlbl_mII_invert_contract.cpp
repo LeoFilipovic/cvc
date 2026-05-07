@@ -84,6 +84,8 @@ using namespace cvc;
 typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const struct QED_kernel_temps t, double kerv[6][4][4][4] );
 
 
+#define DO_CONNECTED 1
+
 /***********************************************************
  * choice of KQED kernels
  * NOTE: Must be consistently updated between here and CUDA.
@@ -109,6 +111,13 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
 #define Rcut_n 8
 #ifdef CUDA_N_RCUT
 #if CUDA_N_RCUT != Rcut_n
+#error "Mismatch between number of integration cuts with CUDA and CPU"
+#endif
+#endif
+
+#define Zcut_n 8
+#ifdef CUDA_N_ZCUT
+#if CUDA_N_ZCUT != Zcut_n
 #error "Mismatch between number of integration cuts with CUDA and CPU"
 #endif
 #endif
@@ -970,7 +979,7 @@ inline void compute_dzu_dzsu(
       for(int ib = 0; ib < 12; ib++ )
       {
         complex w = {0.,0.};
-        spinor_scalar_product_co ( &w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME );
+        spinor_scalar_product_co_cut ( &w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME );
 
         dzu[k][ia][2*ib  ] = w.re;
         dzu[k][ia][2*ib+1] = w.im;

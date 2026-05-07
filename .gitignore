@@ -8,3 +8,5 @@ gitversion.cpp
 TODO
 DONE
 build[._-]*
+build
+tmp
