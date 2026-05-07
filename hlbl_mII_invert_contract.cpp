@@ -66,6 +66,7 @@ extern "C"
 #include "dummy_solver.h"
 #include "clover.h"
 #include "scalar_products.h"
+#include "integration_bins.h"
 
 //#include "hlbl_kernels/kernels.h"
 
@@ -145,29 +146,7 @@ inline int get_Lmax()
   return Lmax;
 }
 
-/***********************************************************
-* Calculate in which Rcut_bin (x,y) lies
-***********************************************************/
-inline int get_Rcut_bin(int const xv[4], int const xv_mi_yv[4], int const Rcut2_bins[Rcut_n])
-{
-  int const x2 = xv[0]*xv[0] + xv[1]*xv[1] + xv[2]*xv[2] + xv[3]*xv[3];
-  int const xmy2 = xv_mi_yv[0]*xv_mi_yv[0] + xv_mi_yv[1]*xv_mi_yv[1] + xv_mi_yv[2]*xv_mi_yv[2] + xv_mi_yv[3]*xv_mi_yv[3];
-  int const r2 = (x2 <= xmy2) ? x2 : xmy2;
 
-  if (r2 <= Rcut2_bins[0])
-  {
-    return 0;
-  }
-
-  for (int iRcut = 1; iRcut < Rcut_n; iRcut++)
-  {
-    if (Rcut2_bins[iRcut-1] < r2 && r2 <= Rcut2_bins[iRcut])
-    {
-      return iRcut;
-    }
-  }
-  return Rcut_n - 1;
-}
 
 
 /***********************************************************
@@ -1305,7 +1284,7 @@ inline void compute_4pt_contraction(
       xv_mi_yv[3] * xunit[0] };
 
 
-    int iRcut = get_Rcut_bin(xv, xv_mi_yv, Rcut2_bins);
+    int iRcut = get_Rcut_bin(xv, xv_mi_yv, Rcut2_bins, Rcut_n);
 
 
     /***********************************************************
