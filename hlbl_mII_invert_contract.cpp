@@ -88,8 +88,9 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
 #error "Mismatching number of QED kernels between CUDA and CPU"
 #endif
 #endif
+#define DO_CONNECTED 0
 
-#define kernel_n_geom 5
+#define kernel_n_geom 2
 #ifdef CUDA_N_QED_GEOM
 #if CUDA_N_QED_GEOM != kernel_n_geom
 #error "Mismatching number of QED kernel geometries between CUDA and CPU"
@@ -111,7 +112,7 @@ const char * KQED_NAME[kernel_n] = {
   "LLambda0.4"
 };
 const char * KQED_GEOM_NAME[kernel_n_geom] = {
-  "P2_0", "P2_1", "P3", "P4_0", "P4_1"
+  "P4_0", "P4_1"
 };
 
 /***********************************************************
@@ -815,9 +816,11 @@ inline void compute_2p2_pieces(
 
       for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
       {
+/*
         KQED_LX[ikernel]( xm, ym,             kqed_t, kerv1 );
         KQED_LX[ikernel]( ym, xm,             kqed_t, kerv2 );
         KQED_LX[ikernel]( xm_mi_ym, ym_minus, kqed_t, kerv3 );
+*/
         KQED_LX[ikernel]( ym_mi_xm, xm_minus, kqed_t, kerv4 );
         for( int k = 0; k < 6; k++ )
         {
@@ -825,13 +828,14 @@ inline void compute_2p2_pieces(
           int const sigma = idx_comb[k][1];
           for ( int nu = 0; nu < 4; nu++ )
           {
-            #if kernel_n_geom != 5
+            #if kernel_n_geom != 2
             #error "Number of QED kernel geometries does not match implementation"
             #endif
             for ( int mu = 0; mu < 4; mu++ )
             {
               for ( int lambda = 0; lambda < 4; lambda++ )
               {
+/*
                 // P2_0
                 local_P23x[yi][ikernel*kernel_n_geom + 0][rho][sigma][nu] +=
                     kerv1[k][mu][nu][lambda] * pimn[mu][lambda][ix];
@@ -841,12 +845,14 @@ inline void compute_2p2_pieces(
                 // P3
                 local_P23x[yi][ikernel*kernel_n_geom + 2][rho][sigma][nu] +=
                     kerv3[k][mu][lambda][nu] * pimn[mu][lambda][ix];
+*/
                 // P4_0
-                local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu] +=
+                local_P23x[yi][ikernel*kernel_n_geom + 0][rho][sigma][nu] +=
                     kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
                 // P4_1
-                local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] +=
+                local_P23x[yi][ikernel*kernel_n_geom + 1][rho][sigma][nu] +=
                     (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+
               }
             }
             // old P4_1
@@ -1407,7 +1413,10 @@ int main(int argc, char **argv) {
   struct timeval ta, tb;
 
 #ifdef HAVE_MPI
-  MPI_Init(&argc, &argv);
+  // MPI_Init(&argc, &argv);
+  int provided;
+  MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+
 #endif
 
   while ((c = getopt(argc, argv, "ch?f:y:z:")) != -1) {
@@ -1627,6 +1636,7 @@ int main(int argc, char **argv) {
       EXIT(19);
     }
 
+#if CHECK_RESIDUE
     /* check residuum */
     if ( check_propagator_residual )
     {
@@ -1637,7 +1647,7 @@ int main(int argc, char **argv) {
         EXIT(123);
       }
     }
-
+#endif //CHECK_RESIDUE
     fini_2level_dtable ( &spinor_work );
     fini_2level_dtable ( &spinor_field );
 
@@ -1790,6 +1800,7 @@ int main(int argc, char **argv) {
         }
  
         /* check residuum */
+#if CHECK_RESIDUE
         if ( check_propagator_residual )
         {
           exitstatus = check_residual_clover (&(spinor_work[1]) , &(spinor_work[0]), gauge_field_with_phase, mzz[iflavor], mzzinv[iflavor], 1);
@@ -1798,7 +1809,7 @@ int main(int argc, char **argv) {
             EXIT(19);
           }
         }
-
+#endif //CHECK_RESIDUE
         assign_prop(fwd_src, iflavor, i, spinor_work[1], VOLUME);
      
         if ( g_write_propagator ) 
@@ -1908,6 +1919,7 @@ int main(int argc, char **argv) {
           }
        
           /* check residuum */
+#if CHECK_RESIDUE
           if ( check_propagator_residual ) 
           {
             exitstatus = check_residual_clover (&(spinor_work[1]) , &(spinor_work[0]), gauge_field_with_phase, mzz[iflavor], mzzinv[iflavor], 1);
@@ -1916,7 +1928,7 @@ int main(int argc, char **argv) {
               EXIT(19);
             }
           }
-      
+#endif //CHECK_RESIDUE
           assign_prop(fwd_y, iflavor, i, spinor_work[1], VOLUME);
            
           if ( g_write_propagator ) 
@@ -2034,7 +2046,7 @@ int main(int argc, char **argv) {
         fini_6level_dtable( &P23x );
         
       } /* end of P1, P2, P3, ... */
-      
+#if DO_CONNECTED
       for ( int iflavor = 0; iflavor <= 1; iflavor++ ) 
       {
         /***********************************************************
@@ -2162,11 +2174,11 @@ int main(int argc, char **argv) {
         fini_4level_dtable ( &g_dzsu );
 
       }  /* end of loop on flavor */
-
+#endif // DO_CONNECTED
     }  /* end of loop on |y| */
 
 
-
+#if DO_CONNECTED
 #ifdef HAVE_MPI
     /***********************************************************
      * sum over MPI processes
@@ -2227,7 +2239,7 @@ int main(int argc, char **argv) {
     }
       
     fini_3level_dtable ( &kernel_sum );
-
+#endif // DO_CONNECTED
   }  /* end of loop on source locations */
 
   /***********************************************************

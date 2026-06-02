@@ -660,11 +660,14 @@ void ker_2p2_pieces(
       //   ym[3] - xm[3] };
 
       for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
+/*
         double local_P2_0[4][4][4] = { 0 };
         double local_P2_1[4][4][4] = { 0 };
         double local_P3[4][4][4] = { 0 };
+*/
         double local_P4_0[4][4][4] = { 0 };
         double local_P4_1[4][4][4] = { 0 };
+/*
         KQED_LX( ikernel, xm, ym, kqed_t, kerv );
         for( int k = 0; k < 6; k++ ) {
           int const rho = idx_comb.comb[k][0];
@@ -704,6 +707,7 @@ void ker_2p2_pieces(
             }
           }
         }
+*/
         KQED_LX( ikernel, ym_mi_xm, xm_minus, kqed_t, kerv );
         for( int k = 0; k < 6; k++ ) {
           int const rho = idx_comb.comb[k][0];
@@ -726,19 +730,22 @@ void ker_2p2_pieces(
         for (int rho = 0; rho < 4; ++rho) {
           for (int sigma = 0; sigma < 4; ++sigma) {
             for (int nu = 0; nu < 4; ++nu) {
-              #if CUDA_N_QED_GEOM != 5
+              #if CUDA_N_QED_GEOM != 2
               #error "Number of QED kernel geometries does not match implementation"
               #endif
+/*
               ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 0)*4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P2_0[rho][sigma][nu]);
               ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 1)*4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P2_1[rho][sigma][nu]);
               ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 2)*4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P3[rho][sigma][nu]);
-              ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 3)*4 + rho)*4 + sigma)*4 + nu;
+*/
+              ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 0)*4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P4_0[rho][sigma][nu]);
-              ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 4)*4 + rho)*4 + sigma)*4 + nu;
+              ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 1)*4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P4_1[rho][sigma][nu]);
+
             }
           }
         }
