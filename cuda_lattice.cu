@@ -772,8 +772,12 @@ void ker_2p2_pieces(
               for ( int lambda = 0; lambda < 4; lambda++ ) {
                 local_P4_0[rho][sigma][nu] += kerv[k][nu][lambda][mu] * pimn[mu][lambda];
                 local_P4_1[rho][sigma][nu] += (xv[rho]) * kerv[k][nu][lambda][mu] * pimn[mu][lambda];
+                local_P4_1[sigma][rho][nu] -= (xv[sigma]) * kerv[k][nu][lambda][mu] * pimn[mu][lambda];
               }
             }
+            local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (xv[rho]);
+            local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (xv[sigma]);
+            // old P4_1
             // local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (yv[rho]-xv[rho]);
             // local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (yv[sigma]-xv[sigma]);
           }

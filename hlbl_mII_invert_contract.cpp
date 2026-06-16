@@ -882,10 +882,19 @@ inline void compute_2p2_pieces(
                 local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu] +=
                     kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
                 // P4_1
-                local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][rho][sigma][nu] +=
-                    (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+//                local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][rho][sigma][nu] +=
+//                    (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+//                local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][sigma][rho][nu] -=
+//                    (xv[sigma]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+
               }
             }
+
+            local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][rho][sigma][nu] =
+                (xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu];
+            local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][sigma][rho][nu] =
+                (xv[sigma]) * (local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu]) * (-1.0);
+
             // old P4_1
             // local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] =
             //     (yv[rho]-xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu];
@@ -1458,9 +1467,10 @@ void usage() {
 int main(int argc, char **argv) {
 
   double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
-  double const alat[2] = { 0.06816, 0.00013 };  /* fm */
+  double const alat[2] = { 0.07951, 0.00013 };  /* fm */
   unsigned const Rcut_n = 8; // Always check CUDA_N_RCUT in cuda_lattice.h
-  int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 {7*7, 10*10, 14*14, 17*17, 20*20, 23*23, 27*27, 32*32, 40*40} //cB64;
+  // int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
+  int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
   int c;
   int filename_set = 0;
   int exitstatus;
