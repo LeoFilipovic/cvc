@@ -26,6 +26,8 @@
 #include "Q_phi.h"
 #include "cvc_utils.h"
 #include "scalar_products.h"
+#include "integration_bins.h"
+#include "site_mapping.h"
 
 namespace cvc {
 
@@ -99,6 +101,100 @@ void spinor_scalar_product_co ( complex * const w, double * const xi, double * c
 }  /* end of spinor_scalar_product_co */
 
 /*********************************************/
+
+
+/*********************************************
+ * complex-valued 4-dim scalar product of two
+ * spinor fields in bins of |z|
+ *********************************************/
+void spinor_scalar_product_co_binned ( complex * const * w, double * const xi, double * const phi, unsigned int const V, const int* Zcut2_bins, const int Zcut_n, const int gsx[4] ) {
+
+  complex paccum[Zcut_n];
+  
+  // double p_accum_re[Zcut_n] = {0.};
+  // double p_accum_im[Zcut_n] = {0.};
+
+#ifdef HAVE_MPI
+ 
+#endif
+#ifdef HAVE_OPENMP
+  omp_lock_t writelock;
+#endif
+  for(int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+    paccum[iZcut].re = 0.;
+    paccum[iZcut].im = 0.;
+  }
+
+
+#ifdef HAVE_OPENMP
+  omp_init_lock(&writelock);
+#pragma omp parallel default(shared)
+{
+#endif
+  complex p2[Zcut_n];
+  for(int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+    p2[iZcut].re = 0.;
+    p2[iZcut].im = 0.;
+  }
+
+#ifdef HAVE_OPENMP
+#pragma omp for
+#endif
+  for( unsigned int ix = 0; ix < V; ix ++ ) {
+    unsigned int const iix = _GSI( ix );
+    int const x[4] = {
+      ( g_lexic2coords[ix][0] + g_proc_coords[0] * T  - gsx[0] + T_global  ) % T_global,
+      ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX - gsx[1] + LX_global ) % LX_global,
+      ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY - gsx[2] + LY_global ) % LY_global,
+      ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ - gsx[3] + LZ_global ) % LZ_global };
+
+    int xv[4];
+    site_map_zerohalf ( xv, x);
+    int iZcut = get_Zcut_bin( xv, Zcut2_bins, Zcut_n);
+    _co_pl_eq_fv_dag_ti_fv(&p2[iZcut], xi+iix, phi+iix);
+
+  }
+#ifdef HAVE_OPENMP
+  omp_set_lock(&writelock);
+#endif
+
+  for(int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+    paccum[iZcut].re += p2[iZcut].re;
+    paccum[iZcut].im += p2[iZcut].im;
+  }
+
+
+#ifdef HAVE_OPENMP
+  omp_unset_lock(&writelock);
+}  /* end of parallel region */
+  omp_destroy_lock(&writelock);
+#endif
+
+  /* fprintf(stdout, "# [spinor_scalar_product_co] %d local: %e %e\n", g_cart_id, paccum.re, paccum.im); */
+
+#ifdef HAVE_MPI
+  complex pall[Zcut_n];
+  for(int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+    pall[iZcut].re=0.;
+    pall[iZcut].im=0.;
+    
+    
+    if ( MPI_Allreduce(&paccum[iZcut], &pall[iZcut], 2, MPI_DOUBLE, MPI_SUM, g_cart_grid) != MPI_SUCCESS ) {
+      if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
+      w[iZcut]->re = sqrt( -1. );
+      w[iZcut]->im = sqrt( -1. );
+    } else {
+      w[iZcut]->re = pall[iZcut].re;
+      w[iZcut]->im = pall[iZcut].im;
+    }
+  }
+#else
+  w[iZcut]->re = paccum[iZcut].re;
+  w[iZcut]->im = paccum[iZcut].im;
+#endif
+}  /* end of spinor_scalar_product_co */
+
+
 /*********************************************/
 
 /*********************************************

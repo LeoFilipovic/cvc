@@ -63,6 +63,8 @@ extern "C"
 #include "dummy_solver.h"
 #include "clover.h"
 #include "scalar_products.h"
+#include "integration_bins.h"
+#include "site_mapping.h"
 
 #define _OP_ID_UP 0
 #define _OP_ID_DN 1
@@ -114,69 +116,6 @@ const char * KQED_GEOM_NAME[kernel_n_geom] = {
   "P2_0", "P2_1", "P3", "P4_0", "P4_1"
 };
 
-/***********************************************************
- * max lattice side length
- ***********************************************************/
-inline int get_Lmax()
-{
-  int Lmax = 0;
-  if ( T_global >= Lmax ) Lmax = T_global;
-  if ( LX_global >= Lmax ) Lmax = LX_global;
-  if ( LY_global >= Lmax ) Lmax = LY_global;
-  if ( LZ_global >= Lmax ) Lmax = LZ_global;
-  return Lmax;
-}
-
-/***********************************************************
-* Calculate in which Rcut_bin (x,y) lies
-***********************************************************/
-inline int get_Rcut_bin(int const xv[4], int const xv_mi_yv[4], const int* Rcut2_bins, unsigned const Rcut_n)
-{
-  int const x2 = xv[0]*xv[0] + xv[1]*xv[1] + xv[2]*xv[2] + xv[3]*xv[3];
-  int const xmy2 = xv_mi_yv[0]*xv_mi_yv[0] + xv_mi_yv[1]*xv_mi_yv[1] + xv_mi_yv[2]*xv_mi_yv[2] + xv_mi_yv[3]*xv_mi_yv[3];
-  int const r2 = (x2 <= xmy2) ? x2 : xmy2;
-
-  if (r2 <= Rcut2_bins[0])
-  {
-    return 0;
-  }
-
-  for (int iRcut = 1; iRcut < Rcut_n; iRcut++)
-  {
-    if (Rcut2_bins[iRcut-1] < r2 && r2 <= Rcut2_bins[iRcut])
-    {
-      return iRcut;
-    }
-  }
-  return Rcut_n - 1;
-}
-
-/***********************************************************
- * x must be in { 0, ..., L-1 }
- * mapping as in 2006.16224, eq. 8
- ***********************************************************/
-inline void site_map (int xv[4], int const x[4] )
-{
-  xv[0] = ( x[0] >= T_global   / 2 ) ? (x[0] - T_global )  : x[0];
-  xv[1] = ( x[1] >= LX_global  / 2 ) ? (x[1] - LX_global)  : x[1];
-  xv[2] = ( x[2] >= LY_global  / 2 ) ? (x[2] - LY_global)  : x[2];
-  xv[3] = ( x[3] >= LZ_global  / 2 ) ? (x[3] - LZ_global)  : x[3];
-
-  return;
-}
-
-/***********************************************************
- * as above, but set L/2 to 0 and -L/2 to 0
- ***********************************************************/
-inline void site_map_zerohalf (int xv[4], int const x[4] )
-{
-  xv[0] = ( x[0] > T_global   / 2 ) ? x[0] - T_global   : (  ( x[0] < T_global   / 2 ) ? x[0] : 0 );
-  xv[1] = ( x[1] > LX_global  / 2 ) ? x[1] - LX_global  : (  ( x[1] < LX_global  / 2 ) ? x[1] : 0 );
-  xv[2] = ( x[2] > LY_global  / 2 ) ? x[2] - LY_global  : (  ( x[2] < LY_global  / 2 ) ? x[2] : 0 );
-  xv[3] = ( x[3] > LZ_global  / 2 ) ? x[3] - LZ_global  : (  ( x[3] < LZ_global  / 2 ) ? x[3] : 0 );
-
-  return;
-}
 
 /***********************************************************
  * useful constants
@@ -601,6 +540,7 @@ inline void g5_gmu_prop(g_prop_t y, prop_t x, int iflavor, int mu, int ib, unsig
   spinor_field_eq_gamma_ti_spinor_field ( y[iflavor][mu][ib], mu, x[iflavor][ib], VOLUME );
   g5_phi ( y[iflavor][mu][ib], VOLUME );
 }
+
 // inline l2c_t init_lexic2coords(int ** g_lexic2coords, unsigned VOLUME) {
 //   return g_lexic2coords;
 // }
@@ -775,7 +715,7 @@ inline void compute_2p2_pieces(
       ( gsy[3] - gsw[3] + LZ_global ) % LZ_global
     };
     int yv[4];
-    site_map_zerohalf ( yv, y );
+    site_map_zerohalf ( yv, y);
     for ( unsigned int ix = 0; ix < VOLUME; ix++ )
     {
       int const x[4] = {
@@ -785,7 +725,7 @@ inline void compute_2p2_pieces(
         ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global };
 
       int xv[4];
-      site_map_zerohalf ( xv, x );
+      site_map_zerohalf ( xv, x);
 
       double const xm[4] = {
         xv[0] * xunit[0],
@@ -948,9 +888,9 @@ inline void compute_2p2_pieces(
  * D_y^+ z g5 gsigma U_src
  ***********************************************************/
 inline void compute_dzu_dzsu(
-    const prop_t fwd_src, const prop_t fwd_y, double *** dzu, double *** dzsu,
-    double **** g_dzu, double **** g_dzsu, const int* gsx, int iflavor, int io_proc,
-    double ** spinor_work, unsigned VOLUME) {
+    const prop_t fwd_src, const prop_t fwd_y, double **** dzu, double **** dzsu,
+    double ***** g_dzu, double ***** g_dzsu, const int* gsx, int iflavor, int io_proc,
+    double ** spinor_work, unsigned VOLUME, const int* Zcut2_bins, const int Zcut_n) {
 
   struct timeval ta, tb;
 
@@ -981,7 +921,7 @@ inline void compute_dzu_dzsu(
           ( g_lexic2coords[iz][3] + g_proc_coords[3] * LZ - gsx[3] + LZ_global ) % LZ_global };
 
         int zv[4];
-        site_map_zerohalf ( zv, z );
+        site_map_zerohalf ( zv, z);
 
         _fv_eq_gamma_ti_fv ( _t, sigma, _u );
         _fv_ti_eq_g5 ( _t );
@@ -993,11 +933,22 @@ inline void compute_dzu_dzsu(
 
       for(int ib = 0; ib < 12; ib++ )
       {
-        complex w = {0.,0.};
-        spinor_scalar_product_co ( &w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME );
+        complex * w[Zcut_n];
+        
+        for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+          complex * c = (complex*)malloc(sizeof(complex));
+          c->re = 0.;
+          c->im = 0.;
+          w[iZcut] = c;
+        }
 
-        dzu[k][ia][2*ib  ] = w.re;
-        dzu[k][ia][2*ib+1] = w.im;
+        spinor_scalar_product_co_binned ( w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME, Zcut2_bins, Zcut_n, gsx );
+
+        for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+          dzu[k][ia][iZcut][2*ib  ] = w[iZcut]->re;
+          dzu[k][ia][iZcut][2*ib+1] = w[iZcut]->im;
+          free(w[iZcut]);
+        }
 
       }  /* of ib */
     }  /* of index combinations k --- rho, sigma */
@@ -1005,15 +956,28 @@ inline void compute_dzu_dzsu(
 
     for ( int sigma = 0; sigma < 4; sigma++ )
     {
-      complex w = { 0., 0. };
+      complex * w[Zcut_n];
+      
+      for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+          complex * c = (complex*)malloc(sizeof(complex));
+          c->re = 0.;
+          c->im = 0.;
+          w[iZcut] = c;
+      }
 
       for(int ib = 0; ib < 12; ib++ )
       {
         spinor_field_eq_gamma_ti_spinor_field ( spinor_work[0], sigma, fwd_src[iflavor][ia], VOLUME );
         g5_phi ( spinor_work[0], VOLUME );
-        spinor_scalar_product_co ( &w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME );
-        dzsu[sigma][ia][2*ib  ] = w.re;
-        dzsu[sigma][ia][2*ib+1] = w.im;
+        spinor_scalar_product_co_binned ( w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME, Zcut2_bins, Zcut_n, gsx );
+        for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+          dzsu[sigma][ia][iZcut][2*ib  ] = w[iZcut]->re;
+          dzsu[sigma][ia][iZcut][2*ib+1] = w[iZcut]->im;
+        }
+      }
+
+      for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+        free(w[iZcut]);
       }
     }
 
@@ -1037,11 +1001,13 @@ inline void compute_dzu_dzsu(
     double spinor1[24];
     for(int ia = 0; ia < 12; ia++ )
     {
-      _fv_eq_gamma_ti_fv ( spinor1, 5, dzu[k][ia] );
+      for(int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+        _fv_eq_gamma_ti_fv ( spinor1, 5, dzu[k][ia][iZcut] );
 
-      for ( int mu = 0; mu < 4; mu++ )
-      {
-        _fv_eq_gamma_ti_fv ( g_dzu[k][mu][ia], mu, spinor1 );
+        for ( int mu = 0; mu < 4; mu++ )
+        {
+          _fv_eq_gamma_ti_fv ( g_dzu[k][mu][ia][iZcut], mu, spinor1 );
+        }
       }
     }
   }
@@ -1054,11 +1020,13 @@ inline void compute_dzu_dzsu(
     double spinor1[24];
     for(int ia = 0; ia < 12; ia++ )
     {
-      _fv_eq_gamma_ti_fv ( spinor1, 5, dzsu[k][ia] );
+      for(int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+        _fv_eq_gamma_ti_fv ( spinor1, 5, dzsu[k][ia][iZcut] );
 
-      for ( int mu = 0; mu < 4; mu++ )
-      {
-        _fv_eq_gamma_ti_fv ( g_dzsu[k][mu][ia], mu, spinor1 );
+        for ( int mu = 0; mu < 4; mu++ )
+        {
+          _fv_eq_gamma_ti_fv ( g_dzsu[k][mu][ia][iZcut], mu, spinor1 );
+        }
       }
     }
   }
@@ -1071,18 +1039,19 @@ inline void compute_dzu_dzsu(
 
 inline void compute_4pt_contraction(
     const prop_t fwd_src, const prop_t fwd_y,
-    double **** const g_dzu, double **** const g_dzsu,
+    double ***** const g_dzu, double ***** const g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
-    double ** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, const int* Rcut2_bins, unsigned const Rcut_n) {
+    double *** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, 
+    const int* Rcut2_bins, unsigned const Rcut_n, const int* Zcut2_bins, unsigned const Zcut_n) {
 
 #ifdef HAVE_OPENMP
 #pragma omp parallel
 {
 #endif
-  double kernel_sum_thread[kernel_n][Rcut_n] = { 0 };
+  double kernel_sum_thread[kernel_n][Rcut_n][Zcut_n] = { 0 };
 
-  double **** corr_I  = init_4level_dtable ( 6, 4, 4, 8 );
-  double **** corr_II = init_4level_dtable ( 6, 4, 4, 8 );
+  double ***** corr_I  = init_5level_dtable ( 6, 4, 4, Zcut_n, 8 );
+  double ***** corr_II = init_5level_dtable ( 6, 4, 4, Zcut_n, 8);
   double ***  dxu     = init_3level_dtable ( 4, 12, 24 );
   double **** g_dxu   = init_4level_dtable ( 4, 4, 12, 24 );
 
@@ -1123,8 +1092,8 @@ inline void compute_4pt_contraction(
     x[3] = ( x[3] - gsx[3] + LZ_global ) % LZ_global;
 
     int xv[4], xvzh[4];
-    site_map ( xv, x );
-    site_map_zerohalf ( xvzh, x );
+    site_map ( xv, x);
+    site_map_zerohalf ( xvzh, x);
 
     // double local_g_fwd_src[4 * 12 * 12 * 2];
     // for ( int mu = 0; mu < 4; mu++ )
@@ -1189,23 +1158,24 @@ inline void compute_4pt_contraction(
         {
           for( int k = 0; k < 6; k++ )
           {
-
-            double dtmp[2] = {0., 0.};
-            for ( int ia = 0; ia < 12; ia++)
-            {
-              for ( int ib = 0; ib < 12; ib++)
+            for( int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+              double dtmp[2] = {0., 0.};
+              for ( int ia = 0; ia < 12; ia++)
               {
+                for ( int ib = 0; ib < 12; ib++)
+                {
 
-                double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
+                  double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
 
-                double v[2] = { g_dzu[k][nu][ib][2*ia], g_dzu[k][nu][ib][2*ia+1] };
+                  double v[2] = { g_dzu[k][nu][ib][iZcut][2*ia], g_dzu[k][nu][ib][iZcut][2*ia+1] };
 
-                dtmp[0] += u[0] * v[0] - u[1] * v[1];
-                dtmp[1] += u[0] * v[1] + u[1] * v[0];
+                  dtmp[0] += u[0] * v[0] - u[1] * v[1];
+                  dtmp[1] += u[0] * v[1] + u[1] * v[0];
+                }
               }
+              corr_I[k][mu][nu][iZcut][2*lambda  ] = -dtmp[0];
+              corr_I[k][mu][nu][iZcut][2*lambda+1] = -dtmp[1];
             }
-            corr_I[k][mu][nu][2*lambda  ] = -dtmp[0];
-            corr_I[k][mu][nu][2*lambda+1] = -dtmp[1];
           }
         }
       }
@@ -1228,23 +1198,26 @@ inline void compute_4pt_contraction(
             int const sigma = idx_comb[k][1];
             int const rho   = idx_comb[k][0];
 
-            double dtmp[2] = {0., 0.};
-            for ( int ia = 0; ia < 12; ia++)
-            {
-              for ( int ib = 0; ib < 12; ib++)
+            for( int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+              
+              double dtmp[2] = {0., 0.};
+              for ( int ia = 0; ia < 12; ia++)
               {
+                for ( int ib = 0; ib < 12; ib++)
+                {
 
-                double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
+                  double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
 
-                double v[2] = { xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia  ] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia  ],
-                                xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia+1] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia+1] };
+                  double v[2] = { xvzh[rho] * g_dzsu[sigma][nu][ib][iZcut][2*ia  ] - xvzh[sigma] * g_dzsu[rho][nu][ib][iZcut][2*ia  ],
+                                  xvzh[rho] * g_dzsu[sigma][nu][ib][iZcut][2*ia+1] - xvzh[sigma] * g_dzsu[rho][nu][ib][iZcut][2*ia+1] };
 
-                dtmp[0] += u[0] * v[0] - u[1] * v[1];
-                dtmp[1] += u[0] * v[1] + u[1] * v[0];
+                  dtmp[0] += u[0] * v[0] - u[1] * v[1];
+                  dtmp[1] += u[0] * v[1] + u[1] * v[0];
+                }
               }
+              corr_II[k][mu][nu][iZcut][2*lambda  ] = -dtmp[0];
+              corr_II[k][mu][nu][iZcut][2*lambda+1] = -dtmp[1];
             }
-            corr_II[k][mu][nu][2*lambda  ] = -dtmp[0];
-            corr_II[k][mu][nu][2*lambda+1] = -dtmp[1];
           }
         }
       }
@@ -1273,8 +1246,8 @@ inline void compute_4pt_contraction(
     // double * const _kerv2   = (double * const )kerv2;
     // double * const _kerv3   = (double * const )kerv3;
 
-    double * const _corr_I  = corr_I[0][0][0];
-    double * const _corr_II = corr_II[0][0][0];
+    double * const _corr_I  = corr_I[0][0][0][0];
+    double * const _corr_II = corr_II[0][0][0][0];
 
     /***********************************************************
     * This is the implementation with the unwrapped x-y *
@@ -1317,7 +1290,7 @@ inline void compute_4pt_contraction(
       KQED_LX[ikernel]( xm, ym,       kqed_t, kerv1 );
       KQED_LX[ikernel]( ym, xm,       kqed_t, kerv2 );
       KQED_LX[ikernel]( xm, xm_mi_ym, kqed_t, kerv3 );
-      double dtmp = 0.;
+      double dtmp[Zcut_n] = {0.};
       int i = 0;
       for( int k = 0; k < 6; k++ )
       {
@@ -1325,18 +1298,20 @@ inline void compute_4pt_contraction(
         {
           for ( int nu = 0; nu < 4; nu++ )
           {
-            for ( int lambda = 0; lambda < 4; lambda++ )
-            {
-              dtmp += ( kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu] ) * _corr_I[2*i]
-                  + kerv3[k][lambda][nu][mu] * _corr_II[2*i];
-
-              i++;
+            for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+              for ( int lambda = 0; lambda < 4; lambda++ )
+              {
+                dtmp[iZcut] += ( kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu] ) * _corr_I[2*i]
+                    + kerv3[k][lambda][nu][mu] * _corr_II[2*i];
+                i++;
+              }
             }
           }
         }
       }
-
-      kernel_sum_thread[ikernel][iRcut] += dtmp;
+      for (int iZcut = 0; iZcut < Zcut_n; iZcut++){
+        kernel_sum_thread[ikernel][iRcut][iZcut] += dtmp[iZcut];
+      }
 
       /***********************************************************
        * BEGIN TEST
@@ -1428,7 +1403,9 @@ inline void compute_4pt_contraction(
   {
     for (unsigned iRcut = 0; iRcut < Rcut_n; iRcut++)
     {
-      kernel_sum[ikernel][iRcut] += kernel_sum_thread[ikernel][iRcut];
+      for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+        kernel_sum[ikernel][iRcut][iZcut] += kernel_sum_thread[ikernel][iRcut][iZcut];
+      }
     }
   }
 
@@ -1439,8 +1416,8 @@ inline void compute_4pt_contraction(
 #endif
 
 
-  fini_4level_dtable ( &corr_I  );
-  fini_4level_dtable ( &corr_II );
+  fini_5level_dtable ( &corr_I  );
+  fini_5level_dtable ( &corr_II );
   fini_4level_dtable ( &g_dxu   );
   fini_3level_dtable ( &dxu     );
 
@@ -1467,10 +1444,15 @@ void usage() {
 int main(int argc, char **argv) {
 
   double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
-  double const alat[2] = { 0.05688, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816
-  unsigned const Rcut_n = 8; // Always check CUDA_N_RCUT in cuda_lattice.h
-  int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
+  double const alat[2] = { 0.07951, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816 cD96 0.05688
+  unsigned const Rcut_n = 4; // Always check CUDA_N_RCUT in cuda_lattice.h
+  // int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
   // int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+  int const Rcut2_bins[Rcut_n-1] = {1*1, 2*2, 3*3};
+
+  int const Zcut_n = 4;
+  // int const Zcut2_bins[Zcut_n - 1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+  int const Zcut2_bins[Zcut_n - 1] = {1*1, 2*2, 3*3}; //small test;
   int c;
   int filename_set = 0;
   int exitstatus;
@@ -1839,7 +1821,7 @@ int main(int argc, char **argv) {
     /***********************************************************
      * local kernel sum
      ***********************************************************/
-    double **** kernel_sum = init_4level_dtable ( kernel_n, 2, ymax + 1, Rcut_n);
+    double ***** kernel_sum = init_5level_dtable ( kernel_n, 2, ymax + 1, Rcut_n, Zcut_n);
     if ( kernel_sum == NULL ) 
     {
       fprintf(stderr, "[hlbl_mII_invert_contract] Error from kqed initialise, status was %d %s %d\n", exitstatus, __FILE__, __LINE__);
@@ -2120,15 +2102,15 @@ int main(int argc, char **argv) {
         /***********************************************************
          * D_y^+ z g5 gsigma U_src
          ***********************************************************/
-        double *** dzu = init_3level_dtable ( 6, 12, 24 );
-        double *** dzsu = init_3level_dtable ( 4, 12, 24 );
+        double **** dzu = init_4level_dtable ( 6, 12, Zcut_n , 24);
+        double **** dzsu = init_4level_dtable ( 4, 12, Zcut_n , 24 );
         if ( dzu == NULL || dzsu == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
           EXIT(12);
         }
-        double **** g_dzu  = init_4level_dtable ( 6, 4, 12, 24 );
-        double **** g_dzsu = init_4level_dtable ( 4, 4, 12, 24 );
+        double ***** g_dzu  = init_5level_dtable ( 6, 4, 12, Zcut_n , 24 );
+        double ***** g_dzsu = init_5level_dtable ( 4, 4, 12, Zcut_n , 24 );
         if ( g_dzu == NULL || g_dzsu == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
@@ -2140,7 +2122,7 @@ int main(int argc, char **argv) {
          ***********************************************************/
         compute_dzu_dzsu(
             fwd_src, fwd_y, dzu, dzsu, g_dzu, g_dzsu, gsx, iflavor, io_proc,
-            spinor_work, VOLUME);
+            spinor_work, VOLUME, Zcut2_bins, Zcut_n);
 
 #if 0
         /***********************************************************
@@ -2153,11 +2135,16 @@ int main(int argc, char **argv) {
             for ( int ib = 0; ib < 12; ib++ )
             {
               double const g5sign = 1. - 2. * ( (ib/3) > 1 );
-
+              double zsummed_re = 0.;
+              double zsummed_im = 0.;
+              for(int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+                zsummed_re += dzu[k][ia][iZcut][2*ib  ];
+                zsummed_im += dzu[k][ia][iZcut][2*ib+1];
+              }
               fprintf (
                   stdout, "[test_dzu] %d seq fl %d yv %3d %3d %3d %3d, k %d isnk %2d isrc %2d   %25.16e %25.16e\n",
                   g_cart_id, iflavor, yv[0], yv[1], yv[2], yv[3], k, ib, ia,
-                  g5sign * dzu[k][ia][2*ib  ], g5sign * dzu[k][ia][2*ib+1] );
+                  g5sign * zsummed_re, g5sign * zsummed_im );
             }}
         }
         /***********************************************************
@@ -2176,11 +2163,16 @@ int main(int argc, char **argv) {
             for ( int ib = 0; ib < 12; ib++ )
             {
               double const g5sign = 1. - 2. * ( (ib/3) > 1 );
-
+              double zsummed_re = 0.;
+              double zsummed_im = 0.;
+              for(int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+                zsummed_re += dzsu[sigma][ia][2*ib  ];
+                zsummed_im += dzsu[sigma][ia][2*ib+1];
+              }
               fprintf (
                   stdout, "[test_dzsu] %d seq fl %d yv %3d %3d %3d %3d, sigma %d isnk %2d isrc %2d   %25.16e %25.16e\n",
                   g_cart_id, iflavor, yv[0], yv[1], yv[2], yv[3], sigma, ib, ia,
-                  g5sign * dzsu[sigma][ia][2*ib  ], g5sign * dzsu[sigma][ia][2*ib+1] );
+                  g5sign * zsummed_re, g5sign * zsummed_im );
             }
           }
         }
@@ -2199,17 +2191,20 @@ int main(int argc, char **argv) {
         gettimeofday ( &ta, (struct timezone *)NULL );
 #endif
 
-        double ** local_kernel_sum = init_2level_dtable(kernel_n , Rcut_n);
+        double *** local_kernel_sum = init_3level_dtable(kernel_n , Rcut_n, Zcut_n);
         compute_4pt_contraction(
             fwd_src, fwd_y, g_dzu, g_dzsu, gsx, iflavor, xunit, yv,
-            local_kernel_sum, kqed_t, VOLUME, Rcut2_bins, Rcut_n);
+            local_kernel_sum, kqed_t, VOLUME, Rcut2_bins, Rcut_n, Zcut2_bins, Zcut_n );
         for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
         {
           for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
           {
-            kernel_sum[ikernel][iflavor][iy][iRcut] = local_kernel_sum[ikernel][iRcut];
+            for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+              kernel_sum[ikernel][iflavor][iy][iRcut][iZcut] = local_kernel_sum[ikernel][iRcut][iZcut];
+            }
           }
         }
+        fini_3level_dtable(&local_kernel_sum);
 
 #if _WITH_TIMER
         gettimeofday ( &tb, (struct timezone *)NULL );
@@ -2229,7 +2224,7 @@ int main(int argc, char **argv) {
               stdout,
               "# [hlbl_mII_invert_contract] kernel_sum iflavor=%d iy=%d %d: %f\n",
               iflavor, iy, ikernel,
-              kernel_sum[ikernel][iflavor][iy][0]);
+              kernel_sum[ikernel][iflavor][iy][0][0]);
         }
         /***********************************************************
          * END OF TEST
@@ -2239,10 +2234,10 @@ int main(int argc, char **argv) {
         /***********************************************************/
         /***********************************************************/
 
-        fini_3level_dtable ( &dzu    );
-        fini_3level_dtable ( &dzsu   );
-        fini_4level_dtable ( &g_dzu  );
-        fini_4level_dtable ( &g_dzsu );
+        fini_4level_dtable ( &dzu    );
+        fini_4level_dtable ( &dzsu   );
+        fini_5level_dtable ( &g_dzu  );
+        fini_5level_dtable ( &g_dzsu );
 
       }  /* end of loop on flavor */
 
@@ -2254,12 +2249,12 @@ int main(int argc, char **argv) {
     /***********************************************************
      * sum over MPI processes
      ***********************************************************/
-    int const nitem = kernel_n * 2 * ( ymax + 1 ) * Rcut_n;
+    int const nitem = kernel_n * 2 * ( ymax + 1 ) * Rcut_n * Zcut_n;
     double * mbuffer = init_1level_dtable ( nitem );
 
-    memcpy ( mbuffer, kernel_sum[0][0][0], nitem * sizeof ( double ) );
+    memcpy ( mbuffer, kernel_sum[0][0][0][0], nitem * sizeof ( double ) );
 
-    if ( MPI_Reduce ( mbuffer, kernel_sum[0][0][0], nitem, MPI_DOUBLE, MPI_SUM, 0, g_cart_grid ) != MPI_SUCCESS )
+    if ( MPI_Reduce ( mbuffer, kernel_sum[0][0][0][0], nitem, MPI_DOUBLE, MPI_SUM, 0, g_cart_grid ) != MPI_SUCCESS )
     {
       fprintf (stderr, "[hlbl_mII_invert_contract] Error from MP_Reduce  %s %d\n", __FILE__, __LINE__ );
       EXIT(12);
@@ -2275,12 +2270,13 @@ int main(int argc, char **argv) {
       for (int jker = 0; jker < kernel_n; ++jker) {
         for (int iflavor = 0; iflavor < 2; ++iflavor)  {
           for (int iy = 0; iy < ymax+1; ++iy) {
-            for (int iRcut = 0; iRcut < Rcut_n; ++iRcut)
-            {
-              fprintf(
-                stdout,
-                "# [hlbl_mII_invert_contract] final kernel_sum iflavor=%d iy=%d %d: %.18g\n",
-                iflavor, iy, jker, kernel_sum[jker][iflavor][iy][iRcut]);
+            for (int iRcut = 0; iRcut < Rcut_n; ++iRcut) {
+              for (int iZcut = 0; iZcut < Zcut_n; ++iZcut) {
+                fprintf(
+                  stdout,
+                  "# [hlbl_mII_invert_contract] final kernel_sum iflavor=%d iy=%d %d: %.18g\n",
+                  iflavor, iy, jker, kernel_sum[jker][iflavor][iy][iRcut]);
+              }
             }
           }
         }
@@ -2296,14 +2292,14 @@ int main(int argc, char **argv) {
 
     if ( io_proc == 2 )
     {
-      int ncdim = 3;
-      int cdim[3] = { 2, ymax+1 , Rcut_n};
+      int ncdim = 4;
+      int cdim[4] = { 2, ymax+1 , Rcut_n, Zcut_n};
       char key[100];
       for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
       {
         sprintf (key, "t%dx%dy%dz%d/%s", gsx[0], gsx[1], gsx[2], gsx[3], KQED_NAME[ikernel] );
 
-        exitstatus = write_h5_contraction ( kernel_sum[ikernel][0][0], NULL, output_filename, key, "double", ncdim, cdim );
+        exitstatus = write_h5_contraction ( kernel_sum[ikernel][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
         if ( exitstatus != 0 )
         {
           fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
@@ -2312,7 +2308,7 @@ int main(int argc, char **argv) {
       }
     }
       
-    fini_4level_dtable ( &kernel_sum );
+    fini_5level_dtable ( &kernel_sum );
 
   }  /* end of loop on source locations */
 
