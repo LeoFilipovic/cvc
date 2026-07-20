@@ -882,18 +882,18 @@ inline void compute_2p2_pieces(
                 local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu] +=
                     kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
                 // P4_1
-//                local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][rho][sigma][nu] +=
-//                    (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
-//                local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][sigma][rho][nu] -=
-//                    (xv[sigma]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+               local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][rho][sigma][nu] +=
+                   (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+               local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][sigma][rho][nu] -=
+                   (xv[sigma]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
 
               }
             }
 
-            local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][rho][sigma][nu] =
-                (xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu];
-            local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][sigma][rho][nu] =
-                (xv[sigma]) * (local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu]) * (-1.0);
+            // local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][rho][sigma][nu] =
+            //     (xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu];
+            // local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][sigma][rho][nu] =
+            //     (xv[sigma]) * (local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu]) * (-1.0);
 
             // old P4_1
             // local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] =
