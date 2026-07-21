@@ -1079,7 +1079,8 @@ inline void compute_4pt_contraction(
 #pragma omp parallel
 {
 #endif
-  double kernel_sum_thread[kernel_n][Rcut_n] = { 0 };
+  // double kernel_sum_thread[kernel_n][Rcut_n] = { 0 };
+  double ** kernel_sum_thread = init_2level_dtable(kernel_n, Rcut_n);
 
   double **** corr_I  = init_4level_dtable ( 6, 4, 4, 8 );
   double **** corr_II = init_4level_dtable ( 6, 4, 4, 8 );
@@ -1443,6 +1444,7 @@ inline void compute_4pt_contraction(
   fini_4level_dtable ( &corr_II );
   fini_4level_dtable ( &g_dxu   );
   fini_3level_dtable ( &dxu     );
+  fini_2level_dtable ( &kernel_sum_thread);
 
 #ifdef HAVE_OPENMP
    /***********************************************************/
@@ -1467,10 +1469,11 @@ void usage() {
 int main(int argc, char **argv) {
 
   double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
-  double const alat[2] = { 0.05688, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816
+  double const alat[2] = { 0.07951, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816 cD96 0.05688
   unsigned const Rcut_n = 8; // Always check CUDA_N_RCUT in cuda_lattice.h
-  int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
-  // int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+  // int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
+  int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+
   int c;
   int filename_set = 0;
   int exitstatus;
@@ -2210,7 +2213,7 @@ int main(int argc, char **argv) {
             kernel_sum[ikernel][iflavor][iy][iRcut] = local_kernel_sum[ikernel][iRcut];
           }
         }
-
+        fini_2level_dtable( &local_kernel_sum );
 #if _WITH_TIMER
         gettimeofday ( &tb, (struct timezone *)NULL );
         show_time ( &ta, &tb, "hlbl_mII_invert_contract", "kernel-sum", io_proc == 2 );
@@ -2267,7 +2270,7 @@ int main(int argc, char **argv) {
 
     fini_1level_dtable ( &mbuffer );
 
-#if 0
+#if 1
     /***********************************************************
      * TEST WRITE total kernel_sum
      ***********************************************************/
@@ -2279,8 +2282,8 @@ int main(int argc, char **argv) {
             {
               fprintf(
                 stdout,
-                "# [hlbl_mII_invert_contract] final kernel_sum iflavor=%d iy=%d %d: %.18g\n",
-                iflavor, iy, jker, kernel_sum[jker][iflavor][iy][iRcut]);
+                "# [hlbl_mII_invert_contract] final kernel_sum iflavor=%d iy=%d jker=%d iRcut=%d: %.18g\n",
+                iflavor, iy, jker, iRcut, kernel_sum[jker][iflavor][iy][iRcut]);
             }
           }
         }
