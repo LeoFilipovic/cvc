@@ -1048,7 +1048,8 @@ inline void compute_4pt_contraction(
 #pragma omp parallel
 {
 #endif
-  double kernel_sum_thread[kernel_n][Rcut_n][Zcut_n] = { 0 };
+  // double kernel_sum_thread[kernel_n][Rcut_n][Zcut_n] = { 0 };
+  double *** kernel_sum_thread = init_3level_dtable(kernel_n, Rcut_n, Zcut_n);
 
   double ***** corr_I  = init_5level_dtable ( 6, 4, 4, Zcut_n, 8 );
   double ***** corr_II = init_5level_dtable ( 6, 4, 4, Zcut_n, 8);
@@ -1290,7 +1291,8 @@ inline void compute_4pt_contraction(
       KQED_LX[ikernel]( xm, ym,       kqed_t, kerv1 );
       KQED_LX[ikernel]( ym, xm,       kqed_t, kerv2 );
       KQED_LX[ikernel]( xm, xm_mi_ym, kqed_t, kerv3 );
-      double dtmp[Zcut_n] = {0.};
+      // double dtmp[Zcut_n] = {0.};
+      double * dtmp = init_1level_dtable( Zcut_n );
       int i = 0;
       for( int k = 0; k < 6; k++ )
       {
@@ -1312,6 +1314,7 @@ inline void compute_4pt_contraction(
       for (int iZcut = 0; iZcut < Zcut_n; iZcut++){
         kernel_sum_thread[ikernel][iRcut][iZcut] += dtmp[iZcut];
       }
+      fini_1level_dtable( &dtmp );
 
       /***********************************************************
        * BEGIN TEST
@@ -1420,6 +1423,7 @@ inline void compute_4pt_contraction(
   fini_5level_dtable ( &corr_II );
   fini_4level_dtable ( &g_dxu   );
   fini_3level_dtable ( &dxu     );
+  fini_3level_dtable ( &kernel_sum_thread );
 
 #ifdef HAVE_OPENMP
    /***********************************************************/
@@ -1445,12 +1449,12 @@ int main(int argc, char **argv) {
 
   double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
   double const alat[2] = { 0.07951, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816 cD96 0.05688
-  unsigned const Rcut_n = 4; // Always check CUDA_N_RCUT in cuda_lattice.h
+  unsigned const Rcut_n = 8; // Always check CUDA_N_RCUT in cuda_lattice.h
   // int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
-  // int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
-  int const Rcut2_bins[Rcut_n-1] = {1*1, 2*2, 3*3};
+  int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+  
 
-  int const Zcut_n = 4;
+  unsigned const Zcut_n = 4;
   // int const Zcut2_bins[Zcut_n - 1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
   int const Zcut2_bins[Zcut_n - 1] = {1*1, 2*2, 3*3}; //small test;
   int c;
