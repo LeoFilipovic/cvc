@@ -548,10 +548,11 @@ inline void g5_gmu_prop(g_prop_t y, prop_t x, int iflavor, int mu, int ib, unsig
 // }
 
 inline void compute_2p2_pieces(
-    const prop_t fwd_y, double ***** P1, double ******* P23x,
+    const prop_t fwd_y, double ****** P1, double ******* P23x,
+    // const prop_t fwd_y, double ***** P1, double ******* P23x,
     const int* gsw, int iflavor, int io_proc, int n_y, const int * gycoords,
     const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
-    unsigned VOLUME, int Nconf, const int* Rcut2_bins, unsigned const Rcut_n) {
+    unsigned VOLUME, int Nconf, const int* Rcut2_bins, unsigned const Rcut_n, const int* Zcut2_bins, unsigned const Zcut_n) {
 
   struct timeval ta, tb;
   
@@ -628,14 +629,17 @@ inline void compute_2p2_pieces(
    *   = sum_z delta(z_r - zeta) Pi_{sn}(z)
    ***********************************************************/
   const int Lmax = get_Lmax();
-  const int n_P1 = 4 * 4 * 4 * Lmax;
-  double **** local_P1 = init_4level_dtable ( 4, 4, 4, Lmax );
+  const int n_P1 = 4 * 4 * 4 * Lmax * Zcut_n;
+  double ***** local_P1 = init_5level_dtable ( 4, 4, 4, Lmax , Zcut_n);
+  // const int n_P1 = 4 * 4 * 4 * Lmax;
+  // double **** local_P1 = init_4level_dtable ( 4, 4, 4, Lmax );
   if ( local_P1 == NULL )
   {
     fprintf ( stderr, "Error alloc local_P1\n" );
     exit ( 57 );
   }
-  memset((void*)local_P1[0][0][0], 0, sizeof(double)*n_P1);
+  // memset((void*)local_P1[0][0][0][0], 0, sizeof(double)*n_P1);
+  // memset((void*)local_P1[0][0][0], 0, sizeof(double)*n_P1);
   for ( int sigma = 0; sigma < 4; sigma++ )
   {
     for ( int nu = 0; nu < 4; nu++ )
@@ -648,9 +652,15 @@ inline void compute_2p2_pieces(
           ( g_lexic2coords[iz][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
           ( g_lexic2coords[iz][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
           ( g_lexic2coords[iz][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global };
+
+        int zv[4];
+        site_map_zerohalf ( zv, z);
+        int iZcut = get_Zcut_bin(zv, Zcut2_bins, Zcut_n);
+
         for ( int rho = 0; rho < 4; rho++ )
         {
-          local_P1[rho][sigma][nu][z[rho]] += pimn[sigma][nu][iz];
+          local_P1[rho][sigma][nu][z[rho]][iZcut] += pimn[sigma][nu][iz];
+          // local_P1[rho][sigma][nu][z[rho]] += pimn[sigma][nu][iz];
         }
       }
     }
@@ -658,15 +668,18 @@ inline void compute_2p2_pieces(
 
 #ifdef HAVE_MPI
   // TODO: just MPI_Reduce?
-  if ( MPI_Allreduce(local_P1[0][0][0], P1[iflavor][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  if ( MPI_Allreduce(local_P1[0][0][0][0], P1[iflavor][0][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  // if ( MPI_Allreduce(local_P1[0][0][0], P1[iflavor][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
 #else
-  memcpy((void*)P1[iflavor][0][0][0], (void*)local_P1[0][0][0], sizeof(double)*n_P1);
+  memcpy((void*)P1[iflavor][0][0][0][0], (void*)local_P1[0][0][0][0], sizeof(double)*n_P1);
+  // memcpy((void*)P1[iflavor][0][0][0], (void*)local_P1[0][0][0], sizeof(double)*n_P1);
 #endif
 
-  fini_4level_dtable ( &local_P1 );
+  fini_5level_dtable ( &local_P1 );
+  // fini_4level_dtable ( &local_P1 );
 
 #if _WITH_TIMER
   gettimeofday ( &tb, (struct timezone *)NULL );
@@ -691,7 +704,7 @@ inline void compute_2p2_pieces(
     fprintf ( stderr, "Error alloc local_P23x or all_P23x\n" );
     exit ( 57 );
   }
-  memset ( (void*)local_P23x[0][0][0][0], 0, sizeof(double)*n_P23x );
+  // memset ( (void*)local_P23x[0][0][0][0], 0, sizeof(double)*n_P23x );
 
   
 #ifdef HAVE_OPENMP
@@ -1728,13 +1741,15 @@ int main(int argc, char **argv) {
    * P1_{rho,sigma,nu}
    ***********************************************************/
   const int Lmax = get_Lmax();
-  double ***** P1 = init_5level_dtable ( 2, 4, 4, 4, Lmax );
+  double ****** P1 = init_6level_dtable ( 2, 4, 4, 4, Lmax , Zcut_n);
+  // double ***** P1 = init_5level_dtable ( 2, 4, 4, 4, Lmax );
   if ( P1 == NULL )
   {
     fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
     EXIT(123);
   }
-  memset ( (void*)P1[0][0][0][0], 0, sizeof(double)*2*4*4*4*Lmax );
+  memset ( (void*)P1[0][0][0][0][0], 0, sizeof(double)*2*4*4*4*Lmax*Zcut_n );
+  // memset ( (void*)P1[0][0][0][0], 0, sizeof(double)*2*4*4*4*Lmax );
 
   /***********************************************************
    * P2/3/x_{rho,sigma,nu} will be allocated later
@@ -2049,19 +2064,22 @@ int main(int argc, char **argv) {
          **********************************************************/
         compute_2p2_pieces(
             fwd_y, P1, P23x, gsy, iflavor, io_proc, n_yp, gyp,
-            xunit, spinor_work, kqed_t, VOLUME, Nconf, Rcut2_bins, Rcut_n);
+            xunit, spinor_work, kqed_t, VOLUME, Nconf, Rcut2_bins, Rcut_n, Zcut2_bins, Zcut_n);
 
         /**********************************************************
          * write P1, P2, P3, ...
          **********************************************************/
         if ( io_proc == 2 )
         {
-          int ncdim = 5;
-          int cdim[5] = { 2, 4, 4, 4, Lmax };
+          int ncdim = 6;
+          int cdim[6] = { 2, 4, 4, 4, Lmax , Zcut_n};
+          // int ncdim = 5;
+          // int cdim[5] = { 2, 4, 4, 4, Lmax };
           char key[100];
           sprintf (key, "/P1/t%dx%dy%dz%d", gsy[0], gsy[1], gsy[2], gsy[3] );
 
-          exitstatus = write_h5_contraction ( P1[0][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
+          exitstatus = write_h5_contraction ( P1[0][0][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
+          // exitstatus = write_h5_contraction ( P1[0][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
           if ( exitstatus != 0 )
           {
             fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
@@ -2326,7 +2344,8 @@ int main(int argc, char **argv) {
   fini_prop ( &fwd_src );
   fini_prop ( &fwd_y );
 
-  fini_5level_dtable ( &P1 );
+  fini_6level_dtable ( &P1 );
+  // fini_5level_dtable ( &P1 );
 
 #ifndef HAVE_TMLQCD_LIBWRAPPER
   free(g_gauge_field);
