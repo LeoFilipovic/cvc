@@ -123,6 +123,26 @@ __device__ int get_Rcut_bin(int const xv[4], int const xv_mi_yv[4], const int* R
   return Rcut_n - 1;
 }
 
+__device__ int get_Zcut_bin(int const zv[4], const int * Zcut2_bins, int const Zcut_n)
+{
+  int const z2 = zv[0]*zv[0] + zv[1]*zv[1] + zv[2]*zv[2] + zv[3]*zv[3];
+
+  if (z2 <= Zcut2_bins[0])
+  {
+    return 0;
+  }
+
+  for (int iZcut = 1; iZcut < Zcut_n; iZcut++)
+  {
+    if (Zcut2_bins[iZcut-1] < z2 && z2 <= Zcut2_bins[iZcut])
+    {
+      return iZcut;
+    }
+  }
+  return Zcut_n - 1;
+}
+    
+
 /**
  * 1D kernels: operate over CUDA_BLOCK_SIZE spinor elements each.
  *  - `len`: num *doubles* in the input/output array (must be divisible by 24)
@@ -162,7 +182,7 @@ __device__ int coord_map_zerohalf(int xi, int Li) {
 __global__ void ker_dzu_dzsu(
     double* _RESTR dzu, double* _RESTR dzsu, const double* _RESTR fwd_src, const double* _RESTR fwd_y,
     int iflavor, Coord g_proc_coords, Coord gsx,
-    Geom global_geom, Geom local_geom) {
+    Geom global_geom, Geom local_geom, const int* Zcut2_bins, const int Zcut_n) {
 
   // Coord origin = get_thread_origin(local_geom);
   int gsx_arr[4] = {gsx.t, gsx.x, gsx.y, gsx.z};
@@ -181,7 +201,7 @@ __global__ void ker_dzu_dzsu(
     for (int k = 0; k < 6; ++k) {
       const int sigma = idx_comb.comb[k][1];
       const int rho = idx_comb.comb[k][0];
-      double dzu_work[12 * 2] = { 0 };
+      double dzu_work[CUDA_N_ZCUT][12 * 2] = { 0 };
       for (int iz = blockIdx.x * blockDim.x + threadIdx.x;
            iz < VOLUME; iz += blockDim.x * gridDim.x) {
         const Coord coord = lexic2coord(iz, local_geom);
@@ -203,6 +223,11 @@ __global__ void ker_dzu_dzsu(
         zsigma = (zsigma + global_geom_arr[sigma]) % global_geom_arr[sigma];
         int factor_rho = coord_map_zerohalf(zrho, global_geom_arr[rho]);
         int factor_sigma = coord_map_zerohalf(zsigma, global_geom_arr[sigma]);
+        int zv[4];
+        for (int ci = 0; ci < 4; ++ci){
+          zv[ci] = coord_map_zerohalf(coord_arr[ci], global_geom_arr[ci]);
+        }
+        int iZcut = get_Zcut_bin(zv, Zcut2_bins, Zcut_n);
         for (int ib = 0; ib < 12; ++ib) {
           for (int i = 0; i < 12; ++i) {
             double fwd_y_re = fwd_y[((1-iflavor) * 12 + ib) * _GSI(VOLUME) + _GSI(iz) + 2*i];
@@ -211,37 +236,53 @@ __global__ void ker_dzu_dzsu(
             double s_im = (_t_sigma[2*i+1] * factor_rho - _t_rho[2*i+1] * factor_sigma);
             // dzu_work[((k * 12 + ia) * 12 + ib) * 2 + 0] += fwd_y_re * s_re + fwd_y_im * s_im;
             // dzu_work[((k * 12 + ia) * 12 + ib) * 2 + 1] += fwd_y_re * s_im - fwd_y_im * s_re;
-            dzu_work[2*ib] += fwd_y_re * s_re + fwd_y_im * s_im;
-            dzu_work[2*ib+1] += fwd_y_re * s_im - fwd_y_im * s_re;
+            dzu_work[iZcut][2*ib] += fwd_y_re * s_re + fwd_y_im * s_im;
+            dzu_work[iZcut][2*ib+1] += fwd_y_re * s_im - fwd_y_im * s_re;
           }
         }
       } // end vol loop
 
       // reduce (TODO faster reduce algo?)
       for (int ib = 0; ib < 12; ++ib) {
-        int ind = ((k * 12 + ia) * 12 + ib) * 2;
-        atomicAdd_system(&dzu[ind], dzu_work[2*ib]);
-        atomicAdd_system(&dzu[ind+1], dzu_work[2*ib+1]);
+        for (int iZcut = 0; iZcut < Zcut_n; ++iZcut) {
+          int ind = (((k * 12 + ia)*Zcut_n + iZcut) * 12 + ib) * 2;
+          atomicAdd_system(&dzu[ind], dzu_work[iZcut][2*ib]);
+          atomicAdd_system(&dzu[ind+1], dzu_work[iZcut][2*ib+1]);
+        }
       }
     }
 
     for (int sigma = 0; sigma < 4; ++sigma) {
       // const double* fwd_base = &fwd_src[_GSI(VOLUME) * (iflavor * 12 + ia)];
       for (int ib = 0; ib < 12; ++ib) {
-        double dzsu_work_re = 0.0;
-        double dzsu_work_im = 0.0;
+        // double dzsu_work_re = 0.0;
+        // double dzsu_work_im = 0.0;
+
+        double dzsu_work_re[CUDA_N_ZCUT] = { 0 };
+        double dzsu_work_im[CUDA_N_ZCUT] = { 0 };
+        for (int iZcut = 0; iZcut < Zcut_n; iZcut++){
+          dzsu_work_re[iZcut] = 0.;
+          dzsu_work_im[iZcut] = 0.;
+        }
         for (int iz = blockIdx.x * blockDim.x + threadIdx.x;
              iz < VOLUME; iz += blockDim.x * gridDim.x) {
-          // const Coord coord = lexic2coord(iz, local_geom);
-          // const int tt = coord.t;
-          // const int xx = coord.x;
-          // const int yy = coord.y;
-          // const int zz = coord.z;
+          const Coord coord = lexic2coord(iz, local_geom);
+          const int tt = coord.t;
+          const int xx = coord.x;
+          const int yy = coord.y;
+          const int zz = coord.z;
+          int coord_arr[4] = {tt, xx, yy, zz};
+          
           const double* _u = &fwd_base[_GSI(iz)];
           double* _t = spinor_work_0;
           _fv_eq_gamma_ti_fv(_t, sigma, _u);
           _fv_ti_eq_g5(_t);
 
+          int zv[4];
+          for (int ci = 0; ci < 4; ++ci){
+            zv[ci] = coord_map_zerohalf(coord_arr[ci], global_geom_arr[ci]);
+          }
+          int iZcut = get_Zcut_bin(zv, Zcut2_bins, Zcut_n);
           for (int i = 0; i < 12; ++i) {
             double fwd_y_re = fwd_y[((1-iflavor) * 12 + ib) * _GSI(VOLUME) + _GSI(iz) + 2*i];
             double fwd_y_im = fwd_y[((1-iflavor) * 12 + ib) * _GSI(VOLUME) + _GSI(iz) + 2*i+1];
@@ -249,15 +290,17 @@ __global__ void ker_dzu_dzsu(
             double s_im = _t[2*i+1];
             // dzsu_work[((sigma * 12 + ia) * 12 + ib) * 2 + 0] += fwd_y_re * s_re + fwd_y_im * s_im;
             // dzsu_work[((sigma * 12 + ia) * 12 + ib) * 2 + 1] += fwd_y_re * s_im - fwd_y_im * s_re;
-            dzsu_work_re += fwd_y_re * s_re + fwd_y_im * s_im;
-            dzsu_work_im += fwd_y_re * s_im - fwd_y_im * s_re;
+            dzsu_work_re[iZcut] += fwd_y_re * s_re + fwd_y_im * s_im;
+            dzsu_work_im[iZcut] += fwd_y_re * s_im - fwd_y_im * s_re;
           }
         } // end vol loop
 
         // reduce (TODO faster reduce algo?)
-        int ind = ((sigma * 12 + ia) * 12 + ib) * 2;
-        atomicAdd_system(&dzsu[ind], dzsu_work_re);
-        atomicAdd_system(&dzsu[ind+1], dzsu_work_im);
+        for (int iZcut = 0; iZcut < Zcut_n; ++iZcut) {
+          int ind = (((sigma * 12 + ia)*Zcut_n + iZcut) * 12 + ib) * 2;
+          atomicAdd_system(&dzsu[ind], dzsu_work_re[iZcut]);
+          atomicAdd_system(&dzsu[ind+1], dzsu_work_im[iZcut]);
+        }
       }
     }
   }
@@ -289,8 +332,8 @@ void ker_4pt_contraction(
     double* _RESTR kernel_sum, const double* _RESTR g_dzu, const double* _RESTR g_dzsu,
     const double* _RESTR fwd_src, const double* _RESTR fwd_y, int iflavor, Coord g_proc_coords,
     Coord gsx, Pair xunit, Coord yv, QED_kernel_temps kqed_t,
-    Geom global_geom, Geom local_geom, const int* Rcut2_bins, unsigned const Rcut_n) {
-
+    Geom global_geom, Geom local_geom, const int* Rcut2_bins, unsigned const Rcut_n, const int* Zcut2_bins, unsigned const Zcut_n) {
+  
   // Coord origin = get_thread_origin(local_geom);
   int gsx_arr[4] = {gsx.t, gsx.x, gsx.y, gsx.z};
   size_t VOLUME = local_geom.T * local_geom.LX * local_geom.LY * local_geom.LZ;
@@ -305,10 +348,12 @@ void ker_4pt_contraction(
   // __shared__ double corr_II_shared[CUDA_THREAD_DIM_1D * 6 * 4 * 4 * 4];
   // double* corr_I_re = &corr_I_shared[threadIdx.x * 6 * 4 * 4 * 4];
   // double* corr_II_re = &corr_II_shared[threadIdx.x * 6 * 4 * 4 * 4];
-  double corr_I_re[6 * 4 * 4 * 4];
-  double corr_II_re[6 * 4 * 4 * 4];
+  double corr_I_re[6 * 4 * 4 * CUDA_N_ZCUT * 4];
+  double corr_II_re[6 * 4 * 4 * CUDA_N_ZCUT * 4];
 
-  double kernel_sum_work[CUDA_N_QED_KERNEL][CUDA_N_RCUT] = { 0 };
+  double kernel_sum_work[CUDA_N_QED_KERNEL][CUDA_N_RCUT][CUDA_N_ZCUT] = { 0 };
+
+
   double spinor_work_0[24], spinor_work_1[24];
   double kerv[6][4][4][4] KQED_ALIGN = { 0 };
 
@@ -360,48 +405,52 @@ void ker_4pt_contraction(
         for (int nu = 0; nu < 4; ++nu) {
           #pragma unroll
           for (int lambda = 0; lambda < 4; ++lambda) {
-            double *_corr_I_re = &corr_I_re[((k * 4 + mu) * 4 + nu) * 4 + lambda];
-            double *_corr_II_re = &corr_II_re[((k * 4 + mu) * 4 + nu) * 4 + lambda];
-            _corr_I_re[0] = 0.0;
-            _corr_II_re[0] = 0.0;
-            for (int ia = 0; ia < 12; ++ia) {
-              /// COMPUTE DXU v2
-              // double dxu[12 * 2];
-              // const double* _u = &fwd_y[(iflavor * 12 + ia) * _GSI(VOLUME) + _GSI(ix)];
-              // for (int ic = 0; ic < 12; ++ic) {
-              //   const double* _d = &fwd_src[((1-iflavor) * 12 + ic) * _GSI(VOLUME) + _GSI(ix)];
-              //   double* _t = spinor_work_1;
-              //   _fv_eq_gamma_ti_fv(_t, mu, _d);
-              //   _fv_ti_eq_g5(_t);
-              //   for (int i = 0; i < 12; ++i) {
-              //     double _t_re = _t[2*i];
-              //     double _t_im = _t[2*i+1];
-              //     double _u_re = _u[2*i];
-              //     double _u_im = _u[2*i+1];
-              //     /* -1 factor due to (g5 gmu)^+ = -g5 gmu */
-              //     dxu[2*ic] += -(_t_re * _u_re + _t_im * _u_im);
-              //     dxu[2*ic+1] += -(_t_re * _u_im - _t_im * _u_re);
-              //   }
-              // }
-              // double *_dxu = &dxu[0];
-              double *_dxu = &dxu[ia * 12 * 2];
-              double *_t = spinor_work_0;
-              _fv_eq_gamma_ti_fv(_t, 5, _dxu);
-              double *_g_dxu = spinor_work_1;
-              _fv_eq_gamma_ti_fv(_g_dxu, lambda, _t);
-              for (int ib = 0; ib < 12; ++ib) {
-                double u_re = _g_dxu[2*ib];
-                double u_im = _g_dxu[2*ib+1];
-                double v_re = g_dzu[(((k * 4 + nu) * 12 + ib) * 12 + ia) * 2];
-                double v_im = g_dzu[(((k * 4 + nu) * 12 + ib) * 12 + ia) * 2 + 1];
-                _corr_I_re[0] -= u_re * v_re - u_im * v_im;
-                v_re = (
-                    xvzh[rho] * g_dzsu[(((sigma * 4 + nu) * 12 + ib) * 12 + ia) * 2] -
-                    xvzh[sigma] * g_dzsu[(((rho * 4 + nu) * 12 + ib) * 12 + ia) * 2] );
-                v_im = (
-                    xvzh[rho] * g_dzsu[(((sigma * 4 + nu) * 12 + ib) * 12 + ia) * 2 + 1] -
-                    xvzh[sigma] * g_dzsu[(((rho * 4 + nu) * 12 + ib) * 12 + ia) * 2 + 1] );
-                _corr_II_re[0] -= u_re * v_re - u_im * v_im;
+            for (int iZcut = 0; iZcut < Zcut_n; ++iZcut) {
+
+            
+              double *_corr_I_re = &corr_I_re[(((k * 4 + mu) * 4 + nu) * Zcut_n  + iZcut) * 4 + lambda];
+              double *_corr_II_re = &corr_II_re[(((k * 4 + mu) * 4 + nu) * Zcut_n  + iZcut) * 4 + lambda];
+              _corr_I_re[0] = 0.0;
+              _corr_II_re[0] = 0.0;
+              for (int ia = 0; ia < 12; ++ia) {
+                /// COMPUTE DXU v2
+                // double dxu[12 * 2];
+                // const double* _u = &fwd_y[(iflavor * 12 + ia) * _GSI(VOLUME) + _GSI(ix)];
+                // for (int ic = 0; ic < 12; ++ic) {
+                //   const double* _d = &fwd_src[((1-iflavor) * 12 + ic) * _GSI(VOLUME) + _GSI(ix)];
+                //   double* _t = spinor_work_1;
+                //   _fv_eq_gamma_ti_fv(_t, mu, _d);
+                //   _fv_ti_eq_g5(_t);
+                //   for (int i = 0; i < 12; ++i) {
+                //     double _t_re = _t[2*i];
+                //     double _t_im = _t[2*i+1];
+                //     double _u_re = _u[2*i];
+                //     double _u_im = _u[2*i+1];
+                //     /* -1 factor due to (g5 gmu)^+ = -g5 gmu */
+                //     dxu[2*ic] += -(_t_re * _u_re + _t_im * _u_im);
+                //     dxu[2*ic+1] += -(_t_re * _u_im - _t_im * _u_re);
+                //   }
+                // }
+                // double *_dxu = &dxu[0];
+                double *_dxu = &dxu[ia * 12 * 2];
+                double *_t = spinor_work_0;
+                _fv_eq_gamma_ti_fv(_t, 5, _dxu);
+                double *_g_dxu = spinor_work_1;
+                _fv_eq_gamma_ti_fv(_g_dxu, lambda, _t);
+                for (int ib = 0; ib < 12; ++ib) {
+                  double u_re = _g_dxu[2*ib];
+                  double u_im = _g_dxu[2*ib+1];
+                  double v_re = g_dzu[((((k * 4 + nu) * 12 + ib) * Zcut_n + iZcut) * 12 + ia) * 2];
+                  double v_im = g_dzu[((((k * 4 + nu) * 12 + ib) * Zcut_n + iZcut) * 12 + ia) * 2 + 1];
+                  _corr_I_re[0] -= u_re * v_re - u_im * v_im;
+                  v_re = (
+                      xvzh[rho] * g_dzsu[((((sigma * 4 + nu) * 12 + ib) * Zcut_n + iZcut) * 12 + ia) * 2] -
+                      xvzh[sigma] * g_dzsu[((((rho * 4 + nu) * 12 + ib) * Zcut_n + iZcut) * 12 + ia) * 2] );
+                  v_im = (
+                      xvzh[rho] * g_dzsu[((((sigma * 4 + nu) * 12 + ib) * Zcut_n + iZcut) * 12 + ia) * 2 + 1] -
+                      xvzh[sigma] * g_dzsu[((((rho * 4 + nu) * 12 + ib) * Zcut_n + iZcut) * 12 + ia) * 2 + 1] );
+                  _corr_II_re[0] -= u_re * v_re - u_im * v_im;
+                }
               }
             }
           }
@@ -465,17 +514,21 @@ void ker_4pt_contraction(
       //     kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda]
       //     - kerv3[k][lambda][nu][mu] ) * _corr_I[2*i]
       //     + kerv3[k][lambda][nu][mu] * _corr_II[2*i];
-      double dtmp = 0.;
+      // double dtmp[Zcut_n] = {0.};
+
+      double dtmp[CUDA_N_ZCUT] = {0.};
       int i;
       KQED_LX( ikernel, xm, ym, kqed_t, kerv );
       i = 0;
       for( int k = 0; k < 6; k++ ) {
         for ( int mu = 0; mu < 4; mu++ ) {
           for ( int nu = 0; nu < 4; nu++ ) {
-            for ( int lambda = 0; lambda < 4; lambda++ ) {
-              dtmp += kerv[k][mu][nu][lambda] * _corr_I_re[i];
-              // dtmp += _corr_I_re[i];
-              i++;
+            for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+              for ( int lambda = 0; lambda < 4; lambda++ ) {
+                dtmp[iZcut] += kerv[k][mu][nu][lambda] * _corr_I_re[i];
+                // dtmp += _corr_I_re[i];
+                i++;
+              }
             }
           }
         }
@@ -485,10 +538,12 @@ void ker_4pt_contraction(
       for( int k = 0; k < 6; k++ ) {
         for ( int mu = 0; mu < 4; mu++ ) {
           for ( int nu = 0; nu < 4; nu++ ) {
-            for ( int lambda = 0; lambda < 4; lambda++ ) {
-              dtmp += kerv[k][nu][mu][lambda] * _corr_I_re[i];
-              // dtmp += _corr_I_re[i];
-              i++;
+            for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+              for ( int lambda = 0; lambda < 4; lambda++ ) {
+                dtmp[iZcut] += kerv[k][nu][mu][lambda] * _corr_I_re[i];
+                // dtmp += _corr_I_re[i];
+                i++;
+              }
             }
           }
         }
@@ -498,16 +553,20 @@ void ker_4pt_contraction(
       for( int k = 0; k < 6; k++ ) {
         for ( int mu = 0; mu < 4; mu++ ) {
           for ( int nu = 0; nu < 4; nu++ ) {
-            for ( int lambda = 0; lambda < 4; lambda++ ) {
-              dtmp -= kerv[k][lambda][nu][mu] * _corr_I_re[i];
-              dtmp += kerv[k][lambda][nu][mu] * _corr_II_re[i];
-              // dtmp += _corr_II_re[i] - _corr_I_re[i];
-              i++;
+            for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+              for ( int lambda = 0; lambda < 4; lambda++ ) {
+                dtmp[iZcut] -= kerv[k][lambda][nu][mu] * _corr_I_re[i];
+                dtmp[iZcut] += kerv[k][lambda][nu][mu] * _corr_II_re[i];
+                // dtmp += _corr_I_re[i];
+                i++;
+              }
             }
           }
         }
       }
-      kernel_sum_work[ikernel][iRcut] += dtmp;
+      for (int iZcut = 0; iZcut < Zcut_n; iZcut++){
+        kernel_sum_work[ikernel][iRcut][iZcut] += dtmp[iZcut];
+      }
     }
 
   } // end coord loop
@@ -515,7 +574,9 @@ void ker_4pt_contraction(
   // reduce (TODO faster reduce algo?)
   for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
     for (int iRcut = 0; iRcut < Rcut_n; ++iRcut) {
-      atomicAdd_system(&kernel_sum[ikernel*Rcut_n + iRcut], kernel_sum_work[ikernel][iRcut]);
+      for (int iZcut = 0; iZcut < Zcut_n; ++iZcut) {
+        atomicAdd_system(&kernel_sum[(ikernel*Rcut_n + iRcut)*Zcut_n + iZcut], kernel_sum_work[ikernel][iRcut][iZcut]); 
+      }
     }
   }
 }
@@ -525,7 +586,8 @@ void ker_2p2_pieces(
     double* _RESTR P1, double* _RESTR P23x,
     const double* _RESTR fwd_y, int iflavor, Coord g_proc_coords,
     Coord gsw, int n_y, Coord* gycoords, Pair xunit, QED_kernel_temps kqed_t,
-    Geom global_geom, Geom local_geom, int Lmax, const int* Rcut2_bins, unsigned const Rcut_n) {
+    Geom global_geom, Geom local_geom, int Lmax, const int* Rcut2_bins, 
+    unsigned const Rcut_n, const int* Zcut2_bins, unsigned const Zcut_n) {
   int gsw_arr[4] = {gsw.t, gsw.x, gsw.y, gsw.z};
   size_t VOLUME = local_geom.T * local_geom.LX * local_geom.LY * local_geom.LZ;
   int local_geom_arr[4] = {local_geom.T, local_geom.LX, local_geom.LY, local_geom.LZ};
@@ -609,12 +671,19 @@ void ker_2p2_pieces(
       int zrho = coord_arr[rho] + proc_coord_arr[rho] * local_geom_arr[rho] - gsw_arr[rho];
       z[rho] = (zrho + global_geom_arr[rho]) % global_geom_arr[rho];
     }
+
+    int zv[4];
+    for (int ci = 0; ci < 4; ++ci){
+      zv[ci] = coord_map_zerohalf(coord_arr[ci], global_geom_arr[ci]);
+    }
+    int iZcut = get_Zcut_bin(zv, Zcut2_bins, Zcut_n);
+
     // reduce (TODO faster reduce algo?)
     for (int sigma = 0; sigma < 4; ++sigma) {
       for (int nu = 0; nu < 4; ++nu) {
         for (int rho = 0; rho < 4; ++rho) {
           atomicAdd_system(
-              &P1[(((rho * 4) + sigma) * 4 + nu) * Lmax + z[rho]],
+              &P1[((((rho * 4) + sigma) * 4 + nu) * Lmax + z[rho]) * Zcut_n + iZcut],
               pimn[sigma][nu]);
         }
       }
@@ -833,7 +902,10 @@ void cu_g5_phi(double* spinor, size_t len) {
 void cu_dzu_dzsu(
     double* d_dzu, double* d_dzsu, const double* fwd_src, const double* fwd_y,
     int iflavor, Coord proc_coords, Coord gsx,
-    Geom global_geom, Geom local_geom) {
+    Geom global_geom, Geom local_geom, const int* Zcut2_bins, const unsigned Zcut_n) {
+  if (CUDA_N_ZCUT != Zcut_n) {
+    fprintf(stderr, "[cuda_lattice] Incorrect Zcut_n");
+  }
   size_t T = local_geom.T;
   size_t LX = local_geom.LX;
   size_t LY = local_geom.LY;
@@ -851,14 +923,18 @@ void cu_dzu_dzsu(
   // dim3 kernel_nthreads(CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D);
   ker_dzu_dzsu<<<kernel_nblocks, kernel_nthreads>>>(
       d_dzu, d_dzsu, fwd_src, fwd_y, iflavor, proc_coords, gsx,
-      global_geom, local_geom);
+      global_geom, local_geom, Zcut2_bins, Zcut_n);
 }
 
 void cu_4pt_contraction(
     double* d_kernel_sum, const double* d_g_dzu, const double* d_g_dzsu,
     const double* fwd_src, const double* fwd_y, int iflavor, Coord proc_coords,
     Coord gsx, Pair xunit, Coord yv, QED_kernel_temps kqed_t,
-    Geom global_geom, Geom local_geom, const int* Rcut2_bins, unsigned const Rcut_n) {
+    Geom global_geom, Geom local_geom, const int* Rcut2_bins, unsigned const Rcut_n, 
+    const int* Zcut2_bins, unsigned const Zcut_n) {
+  if (CUDA_N_ZCUT != Zcut_n) {
+    fprintf(stderr, "[cuda_lattice] Incorrect Zcut_n");
+  }
   size_t T = local_geom.T;
   size_t LX = local_geom.LX;
   size_t LY = local_geom.LY;
@@ -876,13 +952,17 @@ void cu_4pt_contraction(
   // dim3 kernel_nthreads(CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D);
   ker_4pt_contraction<<<kernel_nblocks, kernel_nthreads>>>(
       d_kernel_sum, d_g_dzu, d_g_dzsu, fwd_src, fwd_y, iflavor, proc_coords,
-      gsx, xunit, yv, kqed_t, global_geom, local_geom, Rcut2_bins, Rcut_n);
+      gsx, xunit, yv, kqed_t, global_geom, local_geom, Rcut2_bins, Rcut_n, Zcut2_bins, Zcut_n);
 }
 
 void cu_2p2_pieces(
     double* d_P1, double* d_P23x, const double* fwd_y, int iflavor,
     Coord proc_coords, Coord gsw, int n_y, Coord* d_ycoords, Pair xunit,
-    QED_kernel_temps kqed_t, Geom global_geom, Geom local_geom, const int* Rcut2_bins, unsigned const Rcut_n) {
+    QED_kernel_temps kqed_t, Geom global_geom, Geom local_geom, const int* Rcut2_bins,
+    unsigned const Rcut_n, const int* Zcut2_bins, unsigned const Zcut_n) {
+  if (CUDA_N_ZCUT != Zcut_n) {
+    fprintf(stderr, "[cuda_lattice] Incorrect Zcut_n");
+  }
   size_t T = local_geom.T;
   size_t LX = local_geom.LX;
   size_t LY = local_geom.LY;
@@ -897,7 +977,7 @@ void cu_2p2_pieces(
   if (global_geom.LZ >= Lmax) Lmax = global_geom.LZ;
   ker_2p2_pieces<<<kernel_nblocks, kernel_nthreads>>>(
       d_P1, d_P23x, fwd_y, iflavor, proc_coords, gsw, n_y, d_ycoords, xunit,
-      kqed_t, global_geom, local_geom, Lmax, Rcut2_bins, Rcut_n);
+      kqed_t, global_geom, local_geom, Lmax, Rcut2_bins, Rcut_n, Zcut2_bins, Zcut_n);
 }
 
 

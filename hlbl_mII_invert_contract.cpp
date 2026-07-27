@@ -211,11 +211,13 @@ inline void g5_gmu_prop(g_prop_t y, prop_t x, int iflavor, int mu, int ib, unsig
 /***********************************************************
  * gnu g5 D_y^+ g5 gmu U_y
  ***********************************************************/
+
 inline void compute_2p2_pieces(
-    const prop_t fwd_y, double ***** P1, double ******* P23x,
+    const prop_t fwd_y, double ****** P1, double ******* P23x,
+    // const prop_t fwd_y, double ***** P1, double ******* P23x,
     const int* gsw, int iflavor, int io_proc, int n_y, const int * gycoords,
     const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
-    unsigned VOLUME, int Nconf, const int* Rcut2_bins, unsigned const Rcut_n) {
+    unsigned VOLUME, int Nconf, const int* Rcut2_bins, unsigned const Rcut_n, const int* Zcut2_bins, unsigned const Zcut_n) {
 
   struct timeval ta, tb, ta2, tb2;
   
@@ -226,7 +228,7 @@ inline void compute_2p2_pieces(
   double* d_P1 = NULL;
   double* d_P23x = NULL;
   const int Lmax = get_Lmax();
-  const size_t n_P1 = 4 * 4 * 4 * Lmax;
+  const size_t n_P1 = 4 * 4 * 4 * Lmax * Zcut_n;
   const size_t n_P23x = n_y * kernel_n * kernel_n_geom * Rcut_n * 4 * 4 * 4;
   const size_t sizeof_P1 = n_P1 * sizeof(double);
   const size_t sizeof_P23x = n_P23x * sizeof(double);
@@ -265,7 +267,7 @@ inline void compute_2p2_pieces(
 
   cu_2p2_pieces(
       d_P1, d_P23x, fwd_y, iflavor, d_proc_coords, d_gsw, n_y, d_gycoords,
-      d_xunit, kqed_t, global_geom, local_geom, Rcut2_bins, Rcut_n);
+      d_xunit, kqed_t, global_geom, local_geom, Rcut2_bins, Rcut_n, Zcut2_bins, Zcut_n);
 
 #if _WITH_TIMER
   checkCudaErrors(cudaDeviceSynchronize());
@@ -290,7 +292,7 @@ inline void compute_2p2_pieces(
 
 #ifdef HAVE_MPI
   // TODO: just MPI_Reduce?
-  if ( MPI_Allreduce(local_P1, P1[iflavor][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  if ( MPI_Allreduce(local_P1, P1[iflavor][0][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
@@ -299,7 +301,7 @@ inline void compute_2p2_pieces(
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
 #else
-  memcpy((void*)P1[iflavor][0][0][0], (void*)local_P1, sizeof_P1);
+  memcpy((void*)P1[iflavor][0][0][0][0], (void*)local_P1, sizeof_P1);
   memcpy((void*)all_P23x[0][0][0][0][0], (void*)local_P23x, sizeof_P23x);
 #endif
 
@@ -344,9 +346,9 @@ inline void compute_2p2_pieces(
  * D_y^+ z g5 gsigma U_src
  ***********************************************************/
 inline void compute_dzu_dzsu(
-    const prop_t fwd_src, const prop_t fwd_y, double *** dzu, double *** dzsu,
-    double **** g_dzu, double **** g_dzsu, const int* gsx, int iflavor, int io_proc,
-    double ** spinor_work, unsigned VOLUME) {
+    const prop_t fwd_src, const prop_t fwd_y, double **** dzu, double **** dzsu,
+    double ***** g_dzu, double ***** g_dzsu, const int* gsx, int iflavor, int io_proc,
+    double ** spinor_work, unsigned VOLUME, const int* Zcut2_bins, const unsigned Zcut_n) {
 
   struct timeval ta, tb;
 
@@ -356,8 +358,8 @@ inline void compute_dzu_dzsu(
 
   double* d_dzu = NULL;
   double* d_dzsu = NULL;
-  constexpr size_t n_dzu = 6 * 12 * 24;
-  constexpr size_t n_dzsu = 4 * 12 * 24;
+  const size_t n_dzu = 6 * 12 * 24 * Zcut_n;
+  const size_t n_dzsu = 4 * 12 * 24 * Zcut_n;
   double local_dzu[n_dzu];
   double local_dzsu[n_dzsu];
   size_t sizeof_dzu = n_dzu * sizeof(double);
@@ -378,7 +380,7 @@ inline void compute_dzu_dzsu(
   Coord d_gsx = { .t = gsx[0], .x = gsx[1], .y = gsx[2], .z = gsx[3] };
   cu_dzu_dzsu(
       d_dzu, d_dzsu, fwd_src, fwd_y, iflavor, d_proc_coords, d_gsx,
-      global_geom, local_geom);
+      global_geom, local_geom, Zcut2_bins, Zcut_n);
   checkCudaErrors(cudaDeviceSynchronize());
   checkCudaErrors(cudaMemcpy(
       (void*)local_dzu, (const void*)d_dzu, sizeof_dzu, cudaMemcpyDeviceToHost));
@@ -390,17 +392,17 @@ inline void compute_dzu_dzsu(
   checkCudaErrors(cudaFree(d_dzsu));
 
 #ifdef HAVE_MPI
-  if ( MPI_Allreduce(local_dzu, dzu[0][0], n_dzu, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  if ( MPI_Allreduce(local_dzu, dzu[0][0][0], n_dzu, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
-  if ( MPI_Allreduce(local_dzsu, dzsu[0][0], n_dzsu, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  if ( MPI_Allreduce(local_dzsu, dzsu[0][0][0], n_dzsu, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
 #else
-  memcpy((void*)dzu[0][0], (void*)local_dzu, sizeof_dzu);
-  memcpy((void*)dzsu[0][0], (void*)local_dzsu, sizeof_dzsu);
+  memcpy((void*)dzu[0][0][0], (void*)local_dzu, sizeof_dzu);
+  memcpy((void*)dzsu[0][0][0], (void*)local_dzsu, sizeof_dzsu);
 #endif
 
 #if _WITH_TIMER
@@ -418,11 +420,13 @@ inline void compute_dzu_dzsu(
     double spinor1[24];
     for(int ia = 0; ia < 12; ia++ )
     {
-      _fv_eq_gamma_ti_fv ( spinor1, 5, dzu[k][ia] );
+      for(int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+        _fv_eq_gamma_ti_fv ( spinor1, 5, dzu[k][ia][iZcut] );
 
-      for ( int mu = 0; mu < 4; mu++ )
-      {
-        _fv_eq_gamma_ti_fv ( g_dzu[k][mu][ia], mu, spinor1 );
+        for ( int mu = 0; mu < 4; mu++ )
+        {
+          _fv_eq_gamma_ti_fv ( g_dzu[k][mu][ia][iZcut], mu, spinor1 );
+        }
       }
     }
   }
@@ -432,11 +436,13 @@ inline void compute_dzu_dzsu(
     double spinor1[24];
     for(int ia = 0; ia < 12; ia++ )
     {
-      _fv_eq_gamma_ti_fv ( spinor1, 5, dzsu[k][ia] );
+      for(int iZcut = 0; iZcut < Zcut_n; iZcut++) {
+        _fv_eq_gamma_ti_fv ( spinor1, 5, dzsu[k][ia][iZcut] );
 
-      for ( int mu = 0; mu < 4; mu++ )
-      {
-        _fv_eq_gamma_ti_fv ( g_dzsu[k][mu][ia], mu, spinor1 );
+        for ( int mu = 0; mu < 4; mu++ )
+        {
+          _fv_eq_gamma_ti_fv ( g_dzsu[k][mu][ia][iZcut], mu, spinor1 );
+        }
       }
     }
   }
@@ -449,12 +455,13 @@ inline void compute_dzu_dzsu(
 
 inline void compute_4pt_contraction(
     const prop_t fwd_src, const prop_t fwd_y,
-    double **** const g_dzu, double **** const g_dzsu,
+    double ***** const g_dzu, double ***** const g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
-    double ** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, const int* Rcut2_bins, unsigned const Rcut_n) {
-  constexpr size_t n_g_dzu = 6 * 4 * 12 * 24;
-  constexpr size_t n_g_dzsu = 4 * 4 * 12 * 24;
-  double i_kernel_sum[kernel_n*Rcut_n];
+    double *** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, 
+    const int* Rcut2_bins, unsigned const Rcut_n, const int* Zcut2_bins, unsigned const Zcut_n) {
+  const size_t n_g_dzu = 6 * 4 * 12 * 24 * Zcut_n;
+  const size_t n_g_dzsu = 4 * 4 * 12 * 24 * Zcut_n;
+  double i_kernel_sum[kernel_n*Rcut_n*Zcut_n];
   size_t sizeof_g_dzu = n_g_dzu * sizeof(double);
   size_t sizeof_g_dzsu = n_g_dzsu * sizeof(double);
   double* d_g_dzu = NULL;
@@ -462,12 +469,12 @@ inline void compute_4pt_contraction(
   checkCudaErrors(cudaMalloc((void**)&d_g_dzu, sizeof_g_dzu));
   checkCudaErrors(cudaMalloc((void**)&d_g_dzsu, sizeof_g_dzsu));
   checkCudaErrors(cudaMemcpy(
-      d_g_dzu, &g_dzu[0][0][0][0], sizeof_g_dzu, cudaMemcpyHostToDevice));
+      d_g_dzu, &g_dzu[0][0][0][0][0], sizeof_g_dzu, cudaMemcpyHostToDevice));
   checkCudaErrors(cudaMemcpy(
-      d_g_dzsu, &g_dzsu[0][0][0][0], sizeof_g_dzsu, cudaMemcpyHostToDevice));
+      d_g_dzsu, &g_dzsu[0][0][0][0][0], sizeof_g_dzsu, cudaMemcpyHostToDevice));
   double* d_kernel_sum = NULL;
-  checkCudaErrors(cudaMalloc((void**)&d_kernel_sum, kernel_n*Rcut_n*sizeof(double)));
-  checkCudaErrors(cudaMemset(d_kernel_sum, 0, kernel_n*Rcut_n*sizeof(double)));
+  checkCudaErrors(cudaMalloc((void**)&d_kernel_sum, kernel_n*Rcut_n*Zcut_n*sizeof(double)));
+  checkCudaErrors(cudaMemset(d_kernel_sum, 0, kernel_n*Rcut_n*Zcut_n*sizeof(double)));
   
   Coord d_proc_coords {
     .t = g_proc_coords[0],
@@ -483,10 +490,10 @@ inline void compute_4pt_contraction(
 
   cu_4pt_contraction(
       d_kernel_sum, d_g_dzu, d_g_dzsu, fwd_src, fwd_y, iflavor, d_proc_coords,
-      d_gsx, d_xunit, d_yv, kqed_t, global_geom, local_geom, Rcut2_bins, Rcut_n);
+      d_gsx, d_xunit, d_yv, kqed_t, global_geom, local_geom, Rcut2_bins, Rcut_n, Zcut2_bins, Zcut_n);
 
   checkCudaErrors(cudaMemcpy(
-      &i_kernel_sum[0], d_kernel_sum, kernel_n*Rcut_n*sizeof(double), cudaMemcpyDeviceToHost));
+      &i_kernel_sum[0], d_kernel_sum, kernel_n*Rcut_n*Zcut_n*sizeof(double), cudaMemcpyDeviceToHost));
   checkCudaErrors(cudaFree(d_kernel_sum));
 
   checkCudaErrors(cudaFree(d_g_dzu));
@@ -496,7 +503,10 @@ inline void compute_4pt_contraction(
   {
     for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
     {
-      kernel_sum[ikernel][iRcut] = i_kernel_sum[ikernel*Rcut_n + iRcut];
+      for (int iZcut = 0; iZcut < Zcut_n; iZcut++) 
+      {
+        kernel_sum[ikernel][iRcut][iZcut] = i_kernel_sum[ikernel*Rcut_n*Zcut_n + iRcut*Zcut_n + iZcut];
+      }
     }
   }
 }
@@ -903,7 +913,7 @@ inline void compute_2p2_pieces(
 inline void compute_dzu_dzsu(
     const prop_t fwd_src, const prop_t fwd_y, double **** dzu, double **** dzsu,
     double ***** g_dzu, double ***** g_dzsu, const int* gsx, int iflavor, int io_proc,
-    double ** spinor_work, unsigned VOLUME, const int* Zcut2_bins, const int Zcut_n) {
+    double ** spinor_work, unsigned VOLUME, const int* Zcut2_bins, const unsigned Zcut_n) {
 
   struct timeval ta, tb;
 
@@ -1467,7 +1477,7 @@ int main(int argc, char **argv) {
   int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
   
 
-  unsigned const Zcut_n = 4;
+  unsigned const Zcut_n = 4;  // Has to match CUDA_N_ZCUT in cuda_lattice.h
   // int const Zcut2_bins[Zcut_n - 1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
   int const Zcut2_bins[Zcut_n - 1] = {1*1, 2*2, 3*3}; //small test;
   int c;
