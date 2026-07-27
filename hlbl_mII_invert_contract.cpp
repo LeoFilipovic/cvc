@@ -614,7 +614,7 @@ inline void compute_2p2_pieces(
     unsigned VOLUME, int Nconf, const int* Rcut2_bins, unsigned const Rcut_n) {
 
   struct timeval ta, tb;
-  
+
 #if _WITH_TIMER
   gettimeofday ( &ta, (struct timezone *)NULL );
 #endif
@@ -751,9 +751,8 @@ inline void compute_2p2_pieces(
     fprintf ( stderr, "Error alloc local_P23x or all_P23x\n" );
     exit ( 57 );
   }
-  memset ( (void*)local_P23x[0][0][0][0], 0, sizeof(double)*n_P23x );
+  // memset ( (void*)local_P23x[0][0][0][0], 0, sizeof(double)*n_P23x );
 
-  
 #ifdef HAVE_OPENMP
 #pragma omp parallel for
 #endif
