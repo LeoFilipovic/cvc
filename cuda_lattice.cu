@@ -674,7 +674,7 @@ void ker_2p2_pieces(
 
     int zv[4];
     for (int ci = 0; ci < 4; ++ci){
-      zv[ci] = coord_map_zerohalf(coord_arr[ci], global_geom_arr[ci]);
+      zv[ci] = coord_map_zerohalf(z[ci], global_geom_arr[ci]);
     }
     int iZcut = get_Zcut_bin(zv, Zcut2_bins, Zcut_n);
 
@@ -738,7 +738,7 @@ void ker_2p2_pieces(
         (z[0] - y[0] + global_geom_arr[0]) % global_geom_arr[0],
         (z[1] - y[1] + global_geom_arr[1]) % global_geom_arr[1],
         (z[2] - y[2] + global_geom_arr[2]) % global_geom_arr[2],
-        (z[3] - y[3] + global_geom_arr[2]) % global_geom_arr[3]
+        (z[3] - y[3] + global_geom_arr[3]) % global_geom_arr[3]
       };
       int xv_mi_yv[4] = {
         coord_map_zerohalf(x_mi_y[0], global_geom_arr[0]),
@@ -757,7 +757,7 @@ void ker_2p2_pieces(
         (-z[0] + y[0] + global_geom_arr[0]) % global_geom_arr[0],
         (-z[1] + y[1] + global_geom_arr[1]) % global_geom_arr[1],
         (-z[2] + y[2] + global_geom_arr[2]) % global_geom_arr[2],
-        (-z[3] + y[3] + global_geom_arr[2]) % global_geom_arr[3]
+        (-z[3] + y[3] + global_geom_arr[3]) % global_geom_arr[3]
       };
       int yv_mi_xv[4] = {
         coord_map_zerohalf(y_mi_x[0], global_geom_arr[0]),

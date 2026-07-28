@@ -1477,9 +1477,9 @@ int main(int argc, char **argv) {
   int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
   
 
-  unsigned const Zcut_n = 4;  // Has to match CUDA_N_ZCUT in cuda_lattice.h
-  // int const Zcut2_bins[Zcut_n - 1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
-  int const Zcut2_bins[Zcut_n - 1] = {1*1, 2*2, 3*3}; //small test;
+  unsigned const Zcut_n = 9;  // Has to match CUDA_N_ZCUT in cuda_lattice.h
+  int const Zcut2_bins[Zcut_n - 1] = {5*5, 7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+
   int c;
   int filename_set = 0;
   int exitstatus;
@@ -2198,8 +2198,8 @@ int main(int argc, char **argv) {
               double zsummed_re = 0.;
               double zsummed_im = 0.;
               for(int iZcut = 0; iZcut < Zcut_n; iZcut++) {
-                zsummed_re += dzsu[sigma][ia][2*ib  ];
-                zsummed_im += dzsu[sigma][ia][2*ib+1];
+                zsummed_re += dzsu[sigma][ia][iZcut][2*ib  ];
+                zsummed_im += dzsu[sigma][ia][iZcut][2*ib+1];
               }
               fprintf (
                   stdout, "[test_dzsu] %d seq fl %d yv %3d %3d %3d %3d, sigma %d isnk %2d isrc %2d   %25.16e %25.16e\n",
