@@ -227,7 +227,18 @@ __global__ void ker_dzu_dzsu(
         for (int ci = 0; ci < 4; ++ci){
           zv[ci] = coord_map_zerohalf(coord_arr[ci], global_geom_arr[ci]);
         }
-        int iZcut = get_bin_0(zv, Zcut2_bins, Zcut_n);
+        
+        const int tt_z_mi_y = (coord.t - gsy.t + global_geom_arr[0]) % global_geom_arr[0];
+        const int xx_z_mi_y = (coord.x - gsy.x + global_geom_arr[1]) % global_geom_arr[1];
+        const int yy_z_mi_y = (coord.y - gsy.y + global_geom_arr[2]) % global_geom_arr[2];
+        const int zz_z_mi_y = (coord.z - gsy.z + global_geom_arr[3]) % global_geom_arr[3];
+        int coord_arr_z_mi_y[4] = {tt_z_mi_y, xx_z_mi_y, yy_z_mi_y, zz_z_mi_y};
+
+        int zv_mi_yv[4];
+        for (int ci = 0; ci < 4; ++ci){
+          zv_mi_yv[ci] = coord_map_zerohalf(coord_arr_z_mi_y[ci], global_geom_arr[ci]);
+        }
+        int iZcut = get_bin_0y(zv, zv_mi_yv, Zcut2_bins, Zcut_n);
         for (int ib = 0; ib < 12; ++ib) {
           for (int i = 0; i < 12; ++i) {
             double fwd_y_re = fwd_y[((1-iflavor) * 12 + ib) * _GSI(VOLUME) + _GSI(iz) + 2*i];
