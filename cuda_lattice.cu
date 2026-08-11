@@ -102,7 +102,7 @@ __device__ inline void _fv_ti_eq_g5(double* in_out) {
 /***********************************************************
 * Calculate in which Rcut_bin (x,y) lies
 ***********************************************************/
-__device__ int get_Rcut_bin(int const xv[4], int const xv_mi_yv[4], const int* Rcut2_bins, unsigned const Rcut_n)
+__device__ int get_bin_0y(int const xv[4], int const xv_mi_yv[4], const int* Rcut2_bins, unsigned const Rcut_n)
 {
   int const x2 = xv[0]*xv[0] + xv[1]*xv[1] + xv[2]*xv[2] + xv[3]*xv[3];
   int const xmy2 = xv_mi_yv[0]*xv_mi_yv[0] + xv_mi_yv[1]*xv_mi_yv[1] + xv_mi_yv[2]*xv_mi_yv[2] + xv_mi_yv[3]*xv_mi_yv[3];
@@ -123,7 +123,7 @@ __device__ int get_Rcut_bin(int const xv[4], int const xv_mi_yv[4], const int* R
   return Rcut_n - 1;
 }
 
-__device__ int get_Zcut_bin(int const zv[4], const int * Zcut2_bins, int const Zcut_n)
+__device__ int get_bin_0(int const zv[4], const int * Zcut2_bins, int const Zcut_n)
 {
   int const z2 = zv[0]*zv[0] + zv[1]*zv[1] + zv[2]*zv[2] + zv[3]*zv[3];
 
@@ -181,7 +181,7 @@ __device__ int coord_map_zerohalf(int xi, int Li) {
  */
 __global__ void ker_dzu_dzsu(
     double* _RESTR dzu, double* _RESTR dzsu, const double* _RESTR fwd_src, const double* _RESTR fwd_y,
-    int iflavor, Coord g_proc_coords, Coord gsx,
+    int iflavor, Coord g_proc_coords, Coord gsx, Coord gsy,
     Geom global_geom, Geom local_geom, const int* Zcut2_bins, const int Zcut_n) {
 
   // Coord origin = get_thread_origin(local_geom);
@@ -227,7 +227,7 @@ __global__ void ker_dzu_dzsu(
         for (int ci = 0; ci < 4; ++ci){
           zv[ci] = coord_map_zerohalf(coord_arr[ci], global_geom_arr[ci]);
         }
-        int iZcut = get_Zcut_bin(zv, Zcut2_bins, Zcut_n);
+        int iZcut = get_bin_0(zv, Zcut2_bins, Zcut_n);
         for (int ib = 0; ib < 12; ++ib) {
           for (int i = 0; i < 12; ++i) {
             double fwd_y_re = fwd_y[((1-iflavor) * 12 + ib) * _GSI(VOLUME) + _GSI(iz) + 2*i];
@@ -282,7 +282,18 @@ __global__ void ker_dzu_dzsu(
           for (int ci = 0; ci < 4; ++ci){
             zv[ci] = coord_map_zerohalf(coord_arr[ci], global_geom_arr[ci]);
           }
-          int iZcut = get_Zcut_bin(zv, Zcut2_bins, Zcut_n);
+
+          const int tt_z_mi_y = (coord.t - gsy.t + global_geom_arr[0]) % global_geom_arr[0];
+          const int xx_z_mi_y = (coord.x - gsy.x + global_geom_arr[1]) % global_geom_arr[1];
+          const int yy_z_mi_y = (coord.y - gsy.y + global_geom_arr[2]) % global_geom_arr[2];
+          const int zz_z_mi_y = (coord.z - gsy.z + global_geom_arr[3]) % global_geom_arr[3];
+          int coord_arr_z_mi_y[4] = {tt_z_mi_y, xx_z_mi_y, yy_z_mi_y, zz_z_mi_y};
+
+          int zv_mi_yv[4];
+          for (int ci = 0; ci < 4; ++ci){
+            zv_mi_yv[ci] = coord_map_zerohalf(coord_arr_z_mi_y[ci], global_geom_arr[ci]);
+          }
+          int iZcut = get_bin_0y(zv, zv_mi_yv, Zcut2_bins, Zcut_n);
           for (int i = 0; i < 12; ++i) {
             double fwd_y_re = fwd_y[((1-iflavor) * 12 + ib) * _GSI(VOLUME) + _GSI(iz) + 2*i];
             double fwd_y_im = fwd_y[((1-iflavor) * 12 + ib) * _GSI(VOLUME) + _GSI(iz) + 2*i+1];
@@ -507,7 +518,7 @@ void ker_4pt_contraction(
       xv_mi_yv[3] * xunit.a
     };
     
-    int iRcut = get_Rcut_bin(xv, xv_mi_yv, Rcut2_bins, Rcut_n);
+    int iRcut = get_bin_0y(xv, xv_mi_yv, Rcut2_bins, Rcut_n);
 
     for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
       // dtmp += (
@@ -676,7 +687,7 @@ void ker_2p2_pieces(
     for (int ci = 0; ci < 4; ++ci){
       zv[ci] = coord_map_zerohalf(z[ci], global_geom_arr[ci]);
     }
-    int iZcut = get_Zcut_bin(zv, Zcut2_bins, Zcut_n);
+    int iZcut = get_bin_0(zv, Zcut2_bins, Zcut_n);
 
     // reduce (TODO faster reduce algo?)
     for (int sigma = 0; sigma < 4; ++sigma) {
@@ -784,7 +795,7 @@ void ker_2p2_pieces(
       //   ym[2] - xm[2],
       //   ym[3] - xm[3] };
 
-      int iRcut = get_Rcut_bin(xv, xv_mi_yv, Rcut2_bins, Rcut_n);
+      int iRcut = get_bin_0(xv, Rcut2_bins, Rcut_n);
 
       for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
         double local_P2_0[4][4][4] = { 0 };
@@ -901,7 +912,7 @@ void cu_g5_phi(double* spinor, size_t len) {
 
 void cu_dzu_dzsu(
     double* d_dzu, double* d_dzsu, const double* fwd_src, const double* fwd_y,
-    int iflavor, Coord proc_coords, Coord gsx,
+    int iflavor, Coord proc_coords, Coord gsx, Coord gsy,
     Geom global_geom, Geom local_geom, const int* Zcut2_bins, const unsigned Zcut_n) {
   if (CUDA_N_ZCUT != Zcut_n) {
     fprintf(stderr, "[cuda_lattice] Incorrect Zcut_n");
@@ -922,7 +933,7 @@ void cu_dzu_dzsu(
   // dim3 kernel_nblocks(nx, ny, nz);
   // dim3 kernel_nthreads(CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D);
   ker_dzu_dzsu<<<kernel_nblocks, kernel_nthreads>>>(
-      d_dzu, d_dzsu, fwd_src, fwd_y, iflavor, proc_coords, gsx,
+      d_dzu, d_dzsu, fwd_src, fwd_y, iflavor, proc_coords, gsx, gsy,
       global_geom, local_geom, Zcut2_bins, Zcut_n);
 }
 

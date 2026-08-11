@@ -49,7 +49,7 @@ void cu_spinor_field_eq_gamma_ti_spinor_field(
 void cu_g5_phi(double* out, size_t len);
 void cu_dzu_dzsu(
     double* d_dzu, double* d_dzsu, const double* fwd_src, const double* fwd_y,
-    int iflavor, Coord proc_coords, Coord gsx,
+    int iflavor, Coord proc_coords, Coord gsx, Coord gsy,
     Geom global_geom, Geom local_geom, const int* Zcut2_bins, unsigned const Zcut_n);
 void cu_4pt_contraction(
     double* d_kernel_sum, const double* d_g_dzu, const double* d_g_dzsu,

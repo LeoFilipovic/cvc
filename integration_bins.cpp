@@ -23,9 +23,9 @@
 namespace cvc {
 
   /***********************************************************
-  * Calculate in which Rcut_bin (x,y) lies
+  * cut integral based on distance to both 0 and y
   ***********************************************************/
-  int get_Rcut_bin(int const xv[4], int const xv_mi_yv[4], const int* Rcut2_bins, unsigned const Rcut_n)
+  int get_bin_0y(int const xv[4], int const xv_mi_yv[4], const int* Rcut2_bins, unsigned const Rcut_n)
   {
     int const x2 = xv[0]*xv[0] + xv[1]*xv[1] + xv[2]*xv[2] + xv[3]*xv[3];
     int const xmy2 = xv_mi_yv[0]*xv_mi_yv[0] + xv_mi_yv[1]*xv_mi_yv[1] + xv_mi_yv[2]*xv_mi_yv[2] + xv_mi_yv[3]*xv_mi_yv[3];
@@ -47,9 +47,9 @@ namespace cvc {
   }
 
   /***********************************************************
-  * Calculate in which Zcut_bin z lies
+  * cut integral based on distance to 0
   ***********************************************************/
-  int get_Zcut_bin(int const zv[4], const int * Zcut2_bins, int const Zcut_n)
+  int get_bin_0(int const zv[4], const int * Zcut2_bins, int const Zcut_n)
     {
       int const z2 = zv[0]*zv[0] + zv[1]*zv[1] + zv[2]*zv[2] + zv[3]*zv[3];
 

@@ -107,7 +107,7 @@ void spinor_scalar_product_co ( complex * const w, double * const xi, double * c
  * complex-valued 4-dim scalar product of two
  * spinor fields in bins of |z|
  *********************************************/
-void spinor_scalar_product_co_binned ( complex * const * w, double * const xi, double * const phi, unsigned int const V, const int* Zcut2_bins, const int Zcut_n, const int gsx[4] ) {
+void spinor_scalar_product_co_binned ( complex * const * w, double * const xi, double * const phi, unsigned int const V, const int* Zcut2_bins, const int Zcut_n, const int gsx[4] , const int gsy[4] ) {
 
   complex paccum[Zcut_n];
   
@@ -125,6 +125,12 @@ void spinor_scalar_product_co_binned ( complex * const * w, double * const xi, d
     paccum[iZcut].im = 0.;
   }
 
+  int const y[4] = {
+    ( gsy[0] - gsx[0] + T_global ) % T_global,
+    ( gsy[1] - gsx[1] + LX_global ) % LX_global,
+    ( gsy[2] - gsx[2] + LY_global ) % LY_global,
+    ( gsy[3] - gsx[3] + LZ_global ) % LZ_global
+  };
 
 #ifdef HAVE_OPENMP
   omp_init_lock(&writelock);
@@ -150,7 +156,15 @@ void spinor_scalar_product_co_binned ( complex * const * w, double * const xi, d
 
     int xv[4];
     site_map_zerohalf ( xv, x);
-    int iZcut = get_Zcut_bin( xv, Zcut2_bins, Zcut_n);
+
+    int const x_mi_y[4] = {
+      (x[0] - y[0] + T_global) % T_global,
+      (x[1] - y[1] + LX_global) % LX_global,
+      (x[2] - y[2] + LY_global) % LY_global,
+      (x[3] - y[3] + LZ_global) % LZ_global };
+    int xv_mi_yv[4];
+    site_map_zerohalf(xv_mi_yv, x_mi_y);
+    int iZcut = get_bin_0y( xv, xv_mi_yv, Zcut2_bins, Zcut_n);
     _co_pl_eq_fv_dag_ti_fv(&p2[iZcut], xi+iix, phi+iix);
 
   }

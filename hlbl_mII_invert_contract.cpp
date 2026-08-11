@@ -347,7 +347,7 @@ inline void compute_2p2_pieces(
  ***********************************************************/
 inline void compute_dzu_dzsu(
     const prop_t fwd_src, const prop_t fwd_y, double **** dzu, double **** dzsu,
-    double ***** g_dzu, double ***** g_dzsu, const int* gsx, int iflavor, int io_proc,
+    double ***** g_dzu, double ***** g_dzsu, const int* gsx,  const int* gsy, int iflavor, int io_proc,
     double ** spinor_work, unsigned VOLUME, const int* Zcut2_bins, const unsigned Zcut_n) {
 
   struct timeval ta, tb;
@@ -378,8 +378,9 @@ inline void compute_dzu_dzsu(
   Geom local_geom { .T = T, .LX = LX, .LY = LY, .LZ = LZ };
   Geom global_geom { .T = T_global, .LX = LX_global, .LY = LY_global, .LZ = LZ_global };
   Coord d_gsx = { .t = gsx[0], .x = gsx[1], .y = gsx[2], .z = gsx[3] };
+  Coord d_gsy = { .t = gsy[0], .x = gsy[1], .y = gsy[2], .z = gsy[3] };
   cu_dzu_dzsu(
-      d_dzu, d_dzsu, fwd_src, fwd_y, iflavor, d_proc_coords, d_gsx,
+      d_dzu, d_dzsu, fwd_src, fwd_y, iflavor, d_proc_coords, d_gsx, d_gsy,
       global_geom, local_geom, Zcut2_bins, Zcut_n);
   checkCudaErrors(cudaDeviceSynchronize());
   checkCudaErrors(cudaMemcpy(
@@ -665,7 +666,7 @@ inline void compute_2p2_pieces(
 
         int zv[4];
         site_map_zerohalf ( zv, z);
-        int iZcut = get_Zcut_bin(zv, Zcut2_bins, Zcut_n);
+        int iZcut = get_bin_0(zv, Zcut2_bins, Zcut_n);
 
         for ( int rho = 0; rho < 4; rho++ )
         {
@@ -811,7 +812,8 @@ inline void compute_2p2_pieces(
       //   ym[2] - xm[2],
       //   ym[3] - xm[3] };
 
-      int iRcut = get_Rcut_bin(xv, xv_mi_yv, Rcut2_bins, Rcut_n);
+      // int iRcut = get_Rcut_bin(xv, xv_mi_yv, Rcut2_bins, Rcut_n);
+      int iRcut = get_bin_0(xv, Rcut2_bins, Rcut_n);
 
       for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
       {
@@ -912,7 +914,7 @@ inline void compute_2p2_pieces(
  ***********************************************************/
 inline void compute_dzu_dzsu(
     const prop_t fwd_src, const prop_t fwd_y, double **** dzu, double **** dzsu,
-    double ***** g_dzu, double ***** g_dzsu, const int* gsx, int iflavor, int io_proc,
+    double ***** g_dzu, double ***** g_dzsu, const int* gsx, const int* gsy, int iflavor, int io_proc,
     double ** spinor_work, unsigned VOLUME, const int* Zcut2_bins, const unsigned Zcut_n) {
 
   struct timeval ta, tb;
@@ -965,7 +967,7 @@ inline void compute_dzu_dzsu(
           w[iZcut] = c;
         }
 
-        spinor_scalar_product_co_binned ( w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME, Zcut2_bins, Zcut_n, gsx );
+        spinor_scalar_product_co_binned ( w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME, Zcut2_bins, Zcut_n, gsx, gsy );
 
         for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
           dzu[k][ia][iZcut][2*ib  ] = w[iZcut]->re;
@@ -992,7 +994,7 @@ inline void compute_dzu_dzsu(
       {
         spinor_field_eq_gamma_ti_spinor_field ( spinor_work[0], sigma, fwd_src[iflavor][ia], VOLUME );
         g5_phi ( spinor_work[0], VOLUME );
-        spinor_scalar_product_co_binned ( w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME, Zcut2_bins, Zcut_n, gsx );
+        spinor_scalar_product_co_binned ( w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME, Zcut2_bins, Zcut_n, gsx, gsy );
         for (int iZcut = 0; iZcut < Zcut_n; iZcut++) {
           dzsu[sigma][ia][iZcut][2*ib  ] = w[iZcut]->re;
           dzsu[sigma][ia][iZcut][2*ib+1] = w[iZcut]->im;
@@ -1304,7 +1306,7 @@ inline void compute_4pt_contraction(
       xv_mi_yv[3] * xunit[0] };
 
 
-    int iRcut = get_Rcut_bin(xv, xv_mi_yv, Rcut2_bins, Rcut_n);
+    int iRcut = get_bin_0y(xv, xv_mi_yv, Rcut2_bins, Rcut_n);
     /***********************************************************
      * loop on kernsl
      ***********************************************************/
@@ -1473,13 +1475,15 @@ int main(int argc, char **argv) {
   double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
   double const alat[2] = { 0.06816, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816 cD96 0.05688
   unsigned const Rcut_n = 8; // Always check CUDA_N_RCUT in cuda_lattice.h
-  int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
+  // int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
   // int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
-  
+  int const Rcut2_bins[Rcut_n-1] = {1, 4, 9, 16, 25, 36, 49}; //test 
+
 
   unsigned const Zcut_n = 5;  // Has to match CUDA_N_ZCUT in cuda_lattice.h
   // int const Zcut2_bins[Zcut_n - 1] = {5*5, 7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
-  int const Zcut2_bins[Zcut_n-1] = {8*8, 16*16, 28*28, 45*45}; //cC80
+  // int const Zcut2_bins[Zcut_n-1] = {8*8, 16*16, 28*28, 45*45}; //cC80
+  int const Zcut2_bins[Zcut_n-1] = {1, 4, 9, 16}; //test
 
   int c;
   int filename_set = 0;
@@ -2154,7 +2158,7 @@ int main(int argc, char **argv) {
          * SUM OVER Z
          ***********************************************************/
         compute_dzu_dzsu(
-            fwd_src, fwd_y, dzu, dzsu, g_dzu, g_dzsu, gsx, iflavor, io_proc,
+            fwd_src, fwd_y, dzu, dzsu, g_dzu, g_dzsu, gsx, gsy, iflavor, io_proc,
             spinor_work, VOLUME, Zcut2_bins, Zcut_n);
 
 #if 0
