@@ -1471,14 +1471,15 @@ void usage() {
 int main(int argc, char **argv) {
 
   double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
-  double const alat[2] = { 0.07951, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816 cD96 0.05688
+  double const alat[2] = { 0.06816, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816 cD96 0.05688
   unsigned const Rcut_n = 8; // Always check CUDA_N_RCUT in cuda_lattice.h
-  // int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
-  int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+  int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
+  // int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
   
 
-  unsigned const Zcut_n = 9;  // Has to match CUDA_N_ZCUT in cuda_lattice.h
-  int const Zcut2_bins[Zcut_n - 1] = {5*5, 7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+  unsigned const Zcut_n = 5;  // Has to match CUDA_N_ZCUT in cuda_lattice.h
+  // int const Zcut2_bins[Zcut_n - 1] = {5*5, 7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+  int const Zcut2_bins[Zcut_n-1] = {8*8, 16*16, 28*28, 45*45}; //cC80
 
   int c;
   int filename_set = 0;
