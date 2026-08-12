@@ -96,7 +96,7 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
 #endif
 #endif
 
-#define sparsening_n 2
+#define sparsening_n 5
 
 void QED_kernel_L0P4( const double xv[4], const double yv[4], const struct QED_kernel_temps t, double kerv[6][4][4][4] )
 {
@@ -989,7 +989,9 @@ inline void compute_dzu_dzsu(
           ( g_lexic2coords[iz][1] + g_proc_coords[1] * LX - gsx[1] + LX_global ) % LX_global,
           ( g_lexic2coords[iz][2] + g_proc_coords[2] * LY - gsx[2] + LY_global ) % LY_global,
           ( g_lexic2coords[iz][3] + g_proc_coords[3] * LZ - gsx[3] + LZ_global ) % LZ_global };
-        fprintf(stdout, "# [hlbl_mII_invert_contract] From index %d I get coordinates %d %d %d %d \n", iz, z[0], z[1], z[2], z[3]);
+
+        // fprintf(stdout, "# [hlbl_mII_invert_contract] From index %d I get coordinates %d %d %d %d \n", iz, z[0], z[1], z[2], z[3]);
+
         int zv[4];
         site_map_zerohalf ( zv, z );
 
@@ -1343,10 +1345,11 @@ inline void compute_4pt_contraction(
       KQED_LX[ikernel]( xm, ym,       kqed_t, kerv1 );
       KQED_LX[ikernel]( ym, xm,       kqed_t, kerv2 );
       KQED_LX[ikernel]( xm, xm_mi_ym, kqed_t, kerv3 );
-      double dtmp = 0.;
+      
       int i = 0;
       for ( int isparse = 0; isparse < sparsening_n; isparse++)
-      {
+      { 
+        double dtmp = 0.;
         for( int k = 0; k < 6; k++ )
         {
           for ( int mu = 0; mu < 4; mu++ )
@@ -1363,8 +1366,7 @@ inline void compute_4pt_contraction(
             }
           }
         }
-
-      kernel_sum_thread[ikernel][isparse][iRcut] += dtmp;
+        kernel_sum_thread[ikernel][isparse][iRcut] += dtmp;
       }
       /***********************************************************
        * BEGIN TEST
@@ -1500,9 +1502,11 @@ int main(int argc, char **argv) {
 
   double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
   double const alat[2] = { 0.07951, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816 cD96 0.05688
-  unsigned const Rcut_n = 8; // Always check CUDA_N_RCUT in cuda_lattice.h
+  unsigned const Rcut_n = 2; // Always check CUDA_N_RCUT in cuda_lattice.h
   // int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
-  int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+  // int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+  int const Rcut2_bins[Rcut_n-1] = {1}; //cB64;
+
 
   int c;
   int filename_set = 0;
@@ -2110,7 +2114,7 @@ int main(int argc, char **argv) {
           char key[100];
           sprintf (key, "/P1/t%dx%dy%dz%d", gsy[0], gsy[1], gsy[2], gsy[3] );
 
-          exitstatus = write_h5_contraction ( P1[0][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
+          exitstatus = write_h5_contraction ( P1[0][0][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
           if ( exitstatus != 0 )
           {
             fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
@@ -2177,7 +2181,7 @@ int main(int argc, char **argv) {
             fwd_src, fwd_y, dzu, dzsu, g_dzu, g_dzsu, gsx, iflavor, io_proc,
             spinor_work, VOLUME);
 
-#if 0
+#if 1
         /***********************************************************
          * TEST WRITE dzu
          ***********************************************************/
@@ -2201,7 +2205,7 @@ int main(int argc, char **argv) {
          ***********************************************************/
 #endif
 
-#if 0
+#if 1
         /***********************************************************
          * TEST WRITE dzsu
          ***********************************************************/
