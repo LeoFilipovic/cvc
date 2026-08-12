@@ -96,6 +96,8 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
 #endif
 #endif
 
+#define sparsening_n 2
+
 void QED_kernel_L0P4( const double xv[4], const double yv[4], const struct QED_kernel_temps t, double kerv[6][4][4][4] )
 {
   QED_Mkernel_L2(0.4, xv, yv, t, kerv);
@@ -273,7 +275,7 @@ inline void g5_gmu_prop(g_prop_t y, prop_t x, int iflavor, int mu, int ib, unsig
  * gnu g5 D_y^+ g5 gmu U_y
  ***********************************************************/
 inline void compute_2p2_pieces(
-    const prop_t fwd_y, double ***** P1, double ******* P23x,
+    const prop_t fwd_y, double ****** P1, double ******** P23x,
     const int* gsw, int iflavor, int io_proc, int n_y, const int * gycoords,
     const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
     unsigned VOLUME, int Nconf, const int* Rcut2_bins, unsigned const Rcut_n) {
@@ -405,8 +407,8 @@ inline void compute_2p2_pieces(
  * D_y^+ z g5 gsigma U_src
  ***********************************************************/
 inline void compute_dzu_dzsu(
-    const prop_t fwd_src, const prop_t fwd_y, double *** dzu, double *** dzsu,
-    double **** g_dzu, double **** g_dzsu, const int* gsx, int iflavor, int io_proc,
+    const prop_t fwd_src, const prop_t fwd_y, double **** dzu, double **** dzsu,
+    double ***** g_dzu, double ***** g_dzsu, const int* gsx, int iflavor, int io_proc,
     double ** spinor_work, unsigned VOLUME) {
 
   struct timeval ta, tb;
@@ -510,9 +512,9 @@ inline void compute_dzu_dzsu(
 
 inline void compute_4pt_contraction(
     const prop_t fwd_src, const prop_t fwd_y,
-    double **** const g_dzu, double **** const g_dzsu,
+    double ***** const g_dzu, double ***** const g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
-    double ** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, const int* Rcut2_bins, unsigned const Rcut_n) {
+    double *** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, const int* Rcut2_bins, unsigned const Rcut_n) {
   constexpr size_t n_g_dzu = 6 * 4 * 12 * 24;
   constexpr size_t n_g_dzsu = 4 * 4 * 12 * 24;
   double i_kernel_sum[kernel_n*Rcut_n];
@@ -608,7 +610,7 @@ inline void g5_gmu_prop(g_prop_t y, prop_t x, int iflavor, int mu, int ib, unsig
 // }
 
 inline void compute_2p2_pieces(
-    const prop_t fwd_y, double ***** P1, double ******* P23x,
+    const prop_t fwd_y, double ****** P1, double ******** P23x,
     const int* gsw, int iflavor, int io_proc, int n_y, const int * gycoords,
     const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
     unsigned VOLUME, int Nconf, const int* Rcut2_bins, unsigned const Rcut_n) {
@@ -688,29 +690,32 @@ inline void compute_2p2_pieces(
    *   = sum_z delta(z_r - zeta) Pi_{sn}(z)
    ***********************************************************/
   const int Lmax = get_Lmax();
-  const int n_P1 = 4 * 4 * 4 * Lmax;
-  double **** local_P1 = init_4level_dtable ( 4, 4, 4, Lmax );
+  const int n_P1 = sparsening_n * 4 * 4 * 4 * Lmax;
+  double ***** local_P1 = init_5level_dtable (sparsening_n, 4, 4, 4, Lmax );
   if ( local_P1 == NULL )
   {
     fprintf ( stderr, "Error alloc local_P1\n" );
     exit ( 57 );
   }
-  memset((void*)local_P1[0][0][0], 0, sizeof(double)*n_P1);
-  for ( int sigma = 0; sigma < 4; sigma++ )
+  memset((void*)local_P1[0][0][0][0], 0, sizeof(double)*n_P1);
+  for ( int isparse = 0; isparse < sparsening_n; isparse++)
   {
-    for ( int nu = 0; nu < 4; nu++ )
+    for ( int sigma = 0; sigma < 4; sigma++ )
     {
-      // TODO: Parallelize over non-summed coordinate?
-      for ( unsigned int iz = 0; iz < VOLUME; iz++ )
+      for ( int nu = 0; nu < 4; nu++ )
       {
-        int const z[4] = {
-          ( g_lexic2coords[iz][0] + g_proc_coords[0] * T  - gsw[0] + T_global  ) % T_global,
-          ( g_lexic2coords[iz][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
-          ( g_lexic2coords[iz][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
-          ( g_lexic2coords[iz][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global };
-        for ( int rho = 0; rho < 4; rho++ )
+        // TODO: Parallelize over non-summed coordinate?
+        for ( unsigned int iz = 0; iz < VOLUME; iz++ )
         {
-          local_P1[rho][sigma][nu][z[rho]] += pimn[sigma][nu][iz];
+          int const z[4] = {
+            ( g_lexic2coords[iz][0] + g_proc_coords[0] * T  - gsw[0] + T_global  ) % T_global,
+            ( g_lexic2coords[iz][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
+            ( g_lexic2coords[iz][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
+            ( g_lexic2coords[iz][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global };
+          for ( int rho = 0; rho < 4; rho++ )
+          {
+            local_P1[isparse][rho][sigma][nu][z[rho]] += pimn[sigma][nu][iz];
+          }
         }
       }
     }
@@ -718,15 +723,15 @@ inline void compute_2p2_pieces(
 
 #ifdef HAVE_MPI
   // TODO: just MPI_Reduce?
-  if ( MPI_Allreduce(local_P1[0][0][0], P1[iflavor][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  if ( MPI_Allreduce(local_P1[0][0][0][0], P1[iflavor][0][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
 #else
-  memcpy((void*)P1[iflavor][0][0][0], (void*)local_P1[0][0][0], sizeof(double)*n_P1);
+  memcpy((void*)P1[iflavor][0][0][0][0], (void*)local_P1[0][0][0][0], sizeof(double)*n_P1);
 #endif
 
-  fini_4level_dtable ( &local_P1 );
+  fini_5level_dtable ( &local_P1 );
 
 #if _WITH_TIMER
   gettimeofday ( &tb, (struct timezone *)NULL );
@@ -743,9 +748,9 @@ inline void compute_2p2_pieces(
    * P3_{rsn}(y)
    *   = sum_x (L_[r,s];mln(x+y,y) Pi_{ml}(x)
    ***********************************************************/
-  int n_P23x = n_y * kernel_n * kernel_n_geom * Rcut_n * 4 * 4 * 4;
-  double ****** local_P23x = init_6level_dtable ( n_y, kernel_n*kernel_n_geom, Rcut_n, 4, 4, 4 );
-  double ****** all_P23x = init_6level_dtable ( n_y, kernel_n*kernel_n_geom, Rcut_n, 4, 4, 4 );
+  int n_P23x = n_y * kernel_n * kernel_n_geom * sparsening_n * Rcut_n * 4 * 4 * 4;
+  double ******* local_P23x = init_7level_dtable ( n_y, kernel_n*kernel_n_geom, sparsening_n, Rcut_n, 4, 4, 4 );
+  double ******* all_P23x = init_7level_dtable ( n_y, kernel_n*kernel_n_geom, sparsening_n, Rcut_n, 4, 4, 4 );
   if ( local_P23x == NULL || all_P23x == NULL )
   {
     fprintf ( stderr, "Error alloc local_P23x or all_P23x\n" );
@@ -855,50 +860,53 @@ inline void compute_2p2_pieces(
         KQED_LX[ikernel]( ym, xm,             kqed_t, kerv2 );
         KQED_LX[ikernel]( xm_mi_ym, ym_minus, kqed_t, kerv3 );
         KQED_LX[ikernel]( ym_mi_xm, xm_minus, kqed_t, kerv4 );
-        for( int k = 0; k < 6; k++ )
+        for( int isparse = 0; isparse < sparsening_n; isparse++)
         {
-          int const rho   = idx_comb[k][0];
-          int const sigma = idx_comb[k][1];
-          for ( int nu = 0; nu < 4; nu++ )
+          for( int k = 0; k < 6; k++ )
           {
-            #if kernel_n_geom != 5
-            #error "Number of QED kernel geometries does not match implementation"
-            #endif
-            for ( int mu = 0; mu < 4; mu++ )
+            int const rho   = idx_comb[k][0];
+            int const sigma = idx_comb[k][1];
+            for ( int nu = 0; nu < 4; nu++ )
             {
-              for ( int lambda = 0; lambda < 4; lambda++ )
+              #if kernel_n_geom != 5
+              #error "Number of QED kernel geometries does not match implementation"
+              #endif
+              for ( int mu = 0; mu < 4; mu++ )
               {
-                // P2_0
-                local_P23x[yi][ikernel*kernel_n_geom + 0][iRcut][rho][sigma][nu] +=
-                    kerv1[k][mu][nu][lambda] * pimn[mu][lambda][ix];
-                // P2_1
-                local_P23x[yi][ikernel*kernel_n_geom + 1][iRcut][rho][sigma][nu] +=
-                    kerv2[k][nu][mu][lambda] * pimn[mu][lambda][ix];
-                // P3
-                local_P23x[yi][ikernel*kernel_n_geom + 2][iRcut][rho][sigma][nu] +=
-                    kerv3[k][mu][lambda][nu] * pimn[mu][lambda][ix];
-                // P4_0
-                local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu] +=
-                    kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
-                // P4_1
-               local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][rho][sigma][nu] +=
-                   (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
-               local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][sigma][rho][nu] -=
-                   (xv[sigma]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                for ( int lambda = 0; lambda < 4; lambda++ )
+                {
+                  // P2_0
+                  local_P23x[yi][ikernel*kernel_n_geom + 0][isparse][iRcut][rho][sigma][nu] +=
+                      kerv1[k][mu][nu][lambda] * pimn[mu][lambda][ix];
+                  // P2_1
+                  local_P23x[yi][ikernel*kernel_n_geom + 1][isparse][iRcut][rho][sigma][nu] +=
+                      kerv2[k][nu][mu][lambda] * pimn[mu][lambda][ix];
+                  // P3
+                  local_P23x[yi][ikernel*kernel_n_geom + 2][isparse][iRcut][rho][sigma][nu] +=
+                      kerv3[k][mu][lambda][nu] * pimn[mu][lambda][ix];
+                  // P4_0
+                  local_P23x[yi][ikernel*kernel_n_geom + 3][isparse][iRcut][rho][sigma][nu] +=
+                      kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                  // P4_1
+                local_P23x[yi][ikernel*kernel_n_geom + 4][isparse][iRcut][rho][sigma][nu] +=
+                    (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                local_P23x[yi][ikernel*kernel_n_geom + 4][isparse][iRcut][sigma][rho][nu] -=
+                    (xv[sigma]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
 
+                }
               }
+
+              // local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][rho][sigma][nu] =
+              //     (xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu];
+              // local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][sigma][rho][nu] =
+              //     (xv[sigma]) * (local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu]) * (-1.0);
+
+              // old P4_1
+              // local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] =
+              //     (yv[rho]-xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu];
+              // local_P23x[yi][ikernel*kernel_n_geom + 4][sigma][rho][nu] =
+              //     (yv[sigma]-xv[sigma]) * (-local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu]);
             }
-
-            // local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][rho][sigma][nu] =
-            //     (xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu];
-            // local_P23x[yi][ikernel*kernel_n_geom + 4][iRcut][sigma][rho][nu] =
-            //     (xv[sigma]) * (local_P23x[yi][ikernel*kernel_n_geom + 3][iRcut][rho][sigma][nu]) * (-1.0);
-
-            // old P4_1
-            // local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] =
-            //     (yv[rho]-xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu];
-            // local_P23x[yi][ikernel*kernel_n_geom + 4][sigma][rho][nu] =
-            //     (yv[sigma]-xv[sigma]) * (-local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu]);
           }
         }
       }
@@ -906,12 +914,12 @@ inline void compute_2p2_pieces(
   }
 
 #ifdef HAVE_MPI
-  if ( MPI_Allreduce(local_P23x[0][0][0][0][0], all_P23x[0][0][0][0][0], n_P23x, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  if ( MPI_Allreduce(local_P23x[0][0][0][0][0][0], all_P23x[0][0][0][0][0][0], n_P23x, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
 #else
-  memcpy((void*)all_P23x[0][0][0][0][0], (void*)local_P23x[0][0][0][0][0], sizeof(double)*n_P23x);
+  memcpy((void*)all_P23x[0][0][0][0][0][0], (void*)local_P23x[0][0][0][0][0][0], sizeof(double)*n_P23x);
 #endif
 
   // interleave data into output array
@@ -921,18 +929,21 @@ inline void compute_2p2_pieces(
     {
       for (int igeom = 0; igeom < kernel_n_geom; igeom++ )
       {
-        for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
+        for (int isparse = 0; isparse < sparsening_n; isparse++)
         {
-          memcpy(
-              (void*)P23x[yi][ikernel*kernel_n_geom + igeom][iflavor][iRcut][0][0],
-              (void*)all_P23x[yi][ikernel*kernel_n_geom + igeom][iRcut][0][0], sizeof(double)*4*4*4);
+          for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
+          {
+            memcpy(
+                (void*)P23x[yi][ikernel*kernel_n_geom + igeom][iflavor][isparse][iRcut][0][0],
+                (void*)all_P23x[yi][ikernel*kernel_n_geom + igeom][isparse][iRcut][0][0], sizeof(double)*4*4*4);
+          }
         }
       }
     }
   }
 
-  fini_6level_dtable ( &local_P23x );
-  fini_6level_dtable ( &all_P23x );
+  fini_7level_dtable ( &local_P23x );
+  fini_7level_dtable ( &all_P23x );
 
 #if _WITH_TIMER
   gettimeofday ( &tb, (struct timezone *)NULL );
@@ -947,8 +958,8 @@ inline void compute_2p2_pieces(
  * D_y^+ z g5 gsigma U_src
  ***********************************************************/
 inline void compute_dzu_dzsu(
-    const prop_t fwd_src, const prop_t fwd_y, double *** dzu, double *** dzsu,
-    double **** g_dzu, double **** g_dzsu, const int* gsx, int iflavor, int io_proc,
+    const prop_t fwd_src, const prop_t fwd_y, double **** dzu, double **** dzsu,
+    double ***** g_dzu, double ***** g_dzsu, const int* gsx, int iflavor, int io_proc,
     double ** spinor_work, unsigned VOLUME) {
 
   struct timeval ta, tb;
@@ -978,7 +989,7 @@ inline void compute_dzu_dzsu(
           ( g_lexic2coords[iz][1] + g_proc_coords[1] * LX - gsx[1] + LX_global ) % LX_global,
           ( g_lexic2coords[iz][2] + g_proc_coords[2] * LY - gsx[2] + LY_global ) % LY_global,
           ( g_lexic2coords[iz][3] + g_proc_coords[3] * LZ - gsx[3] + LZ_global ) % LZ_global };
-
+        fprintf(stdout, "# [hlbl_mII_invert_contract] From index %d I get coordinates %d %d %d %d \n", iz, z[0], z[1], z[2], z[3]);
         int zv[4];
         site_map_zerohalf ( zv, z );
 
@@ -994,9 +1005,10 @@ inline void compute_dzu_dzsu(
       {
         complex w = {0.,0.};
         spinor_scalar_product_co ( &w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME );
-
-        dzu[k][ia][2*ib  ] = w.re;
-        dzu[k][ia][2*ib+1] = w.im;
+        for (int isparse = 0; isparse < sparsening_n; ++isparse){
+          dzu[isparse][k][ia][2*ib  ] = w.re;
+          dzu[isparse][k][ia][2*ib+1] = w.im;
+        }
 
       }  /* of ib */
     }  /* of index combinations k --- rho, sigma */
@@ -1011,8 +1023,10 @@ inline void compute_dzu_dzsu(
         spinor_field_eq_gamma_ti_spinor_field ( spinor_work[0], sigma, fwd_src[iflavor][ia], VOLUME );
         g5_phi ( spinor_work[0], VOLUME );
         spinor_scalar_product_co ( &w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME );
-        dzsu[sigma][ia][2*ib  ] = w.re;
-        dzsu[sigma][ia][2*ib+1] = w.im;
+        for (int isparse = 0; isparse < sparsening_n; ++isparse){
+          dzsu[isparse][sigma][ia][2*ib  ] = w.re;
+          dzsu[isparse][sigma][ia][2*ib+1] = w.im;
+        }
       }
     }
 
@@ -1031,36 +1045,42 @@ inline void compute_dzu_dzsu(
 #ifdef HAVE_OPENMP
 #pragma omp parallel for
 #endif
-  for ( int k = 0; k < 6; k++ )
+  for (int isparse = 0; isparse < sparsening_n; isparse++)
   {
-    double spinor1[24];
-    for(int ia = 0; ia < 12; ia++ )
+    for ( int k = 0; k < 6; k++ )
     {
-      _fv_eq_gamma_ti_fv ( spinor1, 5, dzu[k][ia] );
-
-      for ( int mu = 0; mu < 4; mu++ )
+      double spinor1[24];
+      for(int ia = 0; ia < 12; ia++ )
       {
-        _fv_eq_gamma_ti_fv ( g_dzu[k][mu][ia], mu, spinor1 );
+        _fv_eq_gamma_ti_fv ( spinor1, 5, dzu[isparse][k][ia] );
+
+        for ( int mu = 0; mu < 4; mu++ )
+        {
+          _fv_eq_gamma_ti_fv ( g_dzu[isparse][k][mu][ia], mu, spinor1 );
+        }
       }
     }
   }
-
 #ifdef HAVE_OPENMP
 #pragma omp parallel for
 #endif
-  for ( int k = 0; k < 4; k++ )
+  for (int isparse = 0; isparse < sparsening_n; isparse++)
   {
-    double spinor1[24];
-    for(int ia = 0; ia < 12; ia++ )
+    for ( int k = 0; k < 4; k++ )
     {
-      _fv_eq_gamma_ti_fv ( spinor1, 5, dzsu[k][ia] );
-
-      for ( int mu = 0; mu < 4; mu++ )
+      double spinor1[24];
+      for(int ia = 0; ia < 12; ia++ )
       {
-        _fv_eq_gamma_ti_fv ( g_dzsu[k][mu][ia], mu, spinor1 );
+        _fv_eq_gamma_ti_fv ( spinor1, 5, dzsu[isparse][k][ia] );
+
+        for ( int mu = 0; mu < 4; mu++ )
+        {
+          _fv_eq_gamma_ti_fv ( g_dzsu[isparse][k][mu][ia], mu, spinor1 );
+        }
       }
     }
   }
+
 
 #if _WITH_TIMER
   gettimeofday ( &tb, (struct timezone *)NULL );
@@ -1070,19 +1090,19 @@ inline void compute_dzu_dzsu(
 
 inline void compute_4pt_contraction(
     const prop_t fwd_src, const prop_t fwd_y,
-    double **** const g_dzu, double **** const g_dzsu,
+    double ***** const g_dzu, double ***** const g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
-    double ** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, const int* Rcut2_bins, unsigned const Rcut_n) {
+    double *** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, const int* Rcut2_bins, unsigned const Rcut_n) {
 
 #ifdef HAVE_OPENMP
 #pragma omp parallel
 {
 #endif
   // double kernel_sum_thread[kernel_n][Rcut_n] = { 0 };
-  double ** kernel_sum_thread = init_2level_dtable(kernel_n, Rcut_n);
+  double *** kernel_sum_thread = init_3level_dtable(kernel_n, sparsening_n, Rcut_n);
 
-  double **** corr_I  = init_4level_dtable ( 6, 4, 4, 8 );
-  double **** corr_II = init_4level_dtable ( 6, 4, 4, 8 );
+  double ***** corr_I  = init_5level_dtable ( sparsening_n, 6, 4, 4, 8 );
+  double ***** corr_II = init_5level_dtable ( sparsening_n, 6, 4, 4, 8 );
   double ***  dxu     = init_3level_dtable ( 4, 12, 24 );
   double **** g_dxu   = init_4level_dtable ( 4, 4, 12, 24 );
 
@@ -1183,29 +1203,32 @@ inline void compute_4pt_contraction(
      ***********************************************************/
     for ( int mu = 0; mu < 4; mu++ )
     {
-      for ( int nu = 0; nu < 4; nu++ )
+      for ( int isparse = 0; isparse < sparsening_n; isparse++)
       {
-        for ( int lambda = 0; lambda < 4; lambda++ )
+        for ( int nu = 0; nu < 4; nu++ )
         {
-          for( int k = 0; k < 6; k++ )
+          for ( int lambda = 0; lambda < 4; lambda++ )
           {
-
-            double dtmp[2] = {0., 0.};
-            for ( int ia = 0; ia < 12; ia++)
+            for( int k = 0; k < 6; k++ )
             {
-              for ( int ib = 0; ib < 12; ib++)
+
+              double dtmp[2] = {0., 0.};
+              for ( int ia = 0; ia < 12; ia++)
               {
+                for ( int ib = 0; ib < 12; ib++)
+                {
 
-                double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
+                  double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
 
-                double v[2] = { g_dzu[k][nu][ib][2*ia], g_dzu[k][nu][ib][2*ia+1] };
+                  double v[2] = { g_dzu[isparse][k][nu][ib][2*ia], g_dzu[isparse][k][nu][ib][2*ia+1] };
 
-                dtmp[0] += u[0] * v[0] - u[1] * v[1];
-                dtmp[1] += u[0] * v[1] + u[1] * v[0];
+                  dtmp[0] += u[0] * v[0] - u[1] * v[1];
+                  dtmp[1] += u[0] * v[1] + u[1] * v[0];
+                }
               }
+              corr_I[isparse][k][mu][nu][2*lambda  ] = -dtmp[0];
+              corr_I[isparse][k][mu][nu][2*lambda+1] = -dtmp[1];
             }
-            corr_I[k][mu][nu][2*lambda  ] = -dtmp[0];
-            corr_I[k][mu][nu][2*lambda+1] = -dtmp[1];
           }
         }
       }
@@ -1219,32 +1242,35 @@ inline void compute_4pt_contraction(
      ***********************************************************/
     for ( int mu = 0; mu < 4; mu++ )
     {
-      for ( int nu = 0; nu < 4; nu++ )
+      for ( int isparse = 0; isparse < sparsening_n; isparse++)
       {
-        for ( int lambda = 0; lambda < 4; lambda++ )
+        for ( int nu = 0; nu < 4; nu++ )
         {
-          for( int k = 0; k < 6; k++ )
+          for ( int lambda = 0; lambda < 4; lambda++ )
           {
-            int const sigma = idx_comb[k][1];
-            int const rho   = idx_comb[k][0];
-
-            double dtmp[2] = {0., 0.};
-            for ( int ia = 0; ia < 12; ia++)
+            for( int k = 0; k < 6; k++ )
             {
-              for ( int ib = 0; ib < 12; ib++)
+              int const sigma = idx_comb[k][1];
+              int const rho   = idx_comb[k][0];
+
+              double dtmp[2] = {0., 0.};
+              for ( int ia = 0; ia < 12; ia++)
               {
+                for ( int ib = 0; ib < 12; ib++)
+                {
 
-                double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
+                  double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
 
-                double v[2] = { xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia  ] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia  ],
-                                xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia+1] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia+1] };
+                  double v[2] = { xvzh[rho] * g_dzsu[isparse][sigma][nu][ib][2*ia  ] - xvzh[sigma] * g_dzsu[isparse][rho][nu][ib][2*ia  ],
+                                  xvzh[rho] * g_dzsu[isparse][sigma][nu][ib][2*ia+1] - xvzh[sigma] * g_dzsu[isparse][rho][nu][ib][2*ia+1] };
 
-                dtmp[0] += u[0] * v[0] - u[1] * v[1];
-                dtmp[1] += u[0] * v[1] + u[1] * v[0];
+                  dtmp[0] += u[0] * v[0] - u[1] * v[1];
+                  dtmp[1] += u[0] * v[1] + u[1] * v[0];
+                }
               }
+              corr_II[isparse][k][mu][nu][2*lambda  ] = -dtmp[0];
+              corr_II[isparse][k][mu][nu][2*lambda+1] = -dtmp[1];
             }
-            corr_II[k][mu][nu][2*lambda  ] = -dtmp[0];
-            corr_II[k][mu][nu][2*lambda+1] = -dtmp[1];
           }
         }
       }
@@ -1273,8 +1299,8 @@ inline void compute_4pt_contraction(
     // double * const _kerv2   = (double * const )kerv2;
     // double * const _kerv3   = (double * const )kerv3;
 
-    double * const _corr_I  = corr_I[0][0][0];
-    double * const _corr_II = corr_II[0][0][0];
+    double * const _corr_I  = corr_I[0][0][0][0];
+    double * const _corr_II = corr_II[0][0][0][0];
 
     /***********************************************************
     * This is the implementation with the unwrapped x-y *
@@ -1319,25 +1345,27 @@ inline void compute_4pt_contraction(
       KQED_LX[ikernel]( xm, xm_mi_ym, kqed_t, kerv3 );
       double dtmp = 0.;
       int i = 0;
-      for( int k = 0; k < 6; k++ )
+      for ( int isparse = 0; isparse < sparsening_n; isparse++)
       {
-        for ( int mu = 0; mu < 4; mu++ )
+        for( int k = 0; k < 6; k++ )
         {
-          for ( int nu = 0; nu < 4; nu++ )
+          for ( int mu = 0; mu < 4; mu++ )
           {
-            for ( int lambda = 0; lambda < 4; lambda++ )
+            for ( int nu = 0; nu < 4; nu++ )
             {
-              dtmp += ( kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu] ) * _corr_I[2*i]
-                  + kerv3[k][lambda][nu][mu] * _corr_II[2*i];
+              for ( int lambda = 0; lambda < 4; lambda++ )
+              {
+                dtmp += ( kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu] ) * _corr_I[2*i]
+                    + kerv3[k][lambda][nu][mu] * _corr_II[2*i];
 
-              i++;
+                i++;
+              }
             }
           }
         }
+
+      kernel_sum_thread[ikernel][isparse][iRcut] += dtmp;
       }
-
-      kernel_sum_thread[ikernel][iRcut] += dtmp;
-
       /***********************************************************
        * BEGIN TEST
        ***********************************************************/
@@ -1426,9 +1454,12 @@ inline void compute_4pt_contraction(
 
   for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
   {
-    for (unsigned iRcut = 0; iRcut < Rcut_n; iRcut++)
+    for (int isparse = 0; isparse < sparsening_n; isparse++)
     {
-      kernel_sum[ikernel][iRcut] += kernel_sum_thread[ikernel][iRcut];
+      for (unsigned iRcut = 0; iRcut < Rcut_n; iRcut++)
+      {
+        kernel_sum[ikernel][isparse][iRcut] += kernel_sum_thread[ikernel][isparse][iRcut];
+      }
     }
   }
 
@@ -1439,11 +1470,11 @@ inline void compute_4pt_contraction(
 #endif
 
 
-  fini_4level_dtable ( &corr_I  );
-  fini_4level_dtable ( &corr_II );
+  fini_5level_dtable ( &corr_I  );
+  fini_5level_dtable ( &corr_II );
   fini_4level_dtable ( &g_dxu   );
   fini_3level_dtable ( &dxu     );
-  fini_2level_dtable ( &kernel_sum_thread);
+  fini_3level_dtable ( &kernel_sum_thread);
 
 #ifdef HAVE_OPENMP
    /***********************************************************/
@@ -1665,9 +1696,11 @@ int main(int argc, char **argv) {
    ** dummy inversion for solver tuning
    **
    ** use volume source
-   **
+   ** 
    ***********************************************************
    ***********************************************************/
+  fprintf(stdout, "# [hlbl_mII_invert_contract] The VOLUME is %d\n", VOLUME );
+  fflush(stdout);
 
   if ( first_solve_dummy )
   {
@@ -1744,18 +1777,18 @@ int main(int argc, char **argv) {
    * P1_{rho,sigma,nu}
    ***********************************************************/
   const int Lmax = get_Lmax();
-  double ***** P1 = init_5level_dtable ( 2, 4, 4, 4, Lmax );
+  double ****** P1 = init_6level_dtable ( 2, sparsening_n, 4, 4, 4, Lmax );
   if ( P1 == NULL )
   {
     fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
     EXIT(123);
   }
-  memset ( (void*)P1[0][0][0][0], 0, sizeof(double)*2*4*4*4*Lmax );
+  memset ( (void*)P1[0][0][0][0][0], 0, sizeof(double)*2*sparsening_n*4*4*4*Lmax );
 
   /***********************************************************
    * P2/3/x_{rho,sigma,nu} will be allocated later
    ***********************************************************/
-  double ******* P23x; // = init_6level_dtable ( MAX_SOURCE_PAIR_NUMBER, kernel_n*kernel_n_geom, 2, 4, 4, 4 );
+  double ******** P23x; // = init_6level_dtable ( MAX_SOURCE_PAIR_NUMBER, kernel_n*kernel_n_geom, 2, 4, 4, 4 );
 
   /***********************************************************
    * unit for x, y
@@ -1841,7 +1874,7 @@ int main(int argc, char **argv) {
     /***********************************************************
      * local kernel sum
      ***********************************************************/
-    double **** kernel_sum = init_4level_dtable ( kernel_n, 2, ymax + 1, Rcut_n);
+    double ***** kernel_sum = init_5level_dtable ( kernel_n, 2, ymax + 1, sparsening_n, Rcut_n);
     if ( kernel_sum == NULL ) 
     {
       fprintf(stderr, "[hlbl_mII_invert_contract] Error from kqed initialise, status was %d %s %d\n", exitstatus, __FILE__, __LINE__);
@@ -2053,7 +2086,7 @@ int main(int argc, char **argv) {
         
         int n_yp = g_source_pair_targets_number[ipair];
         const int * gyp = (const int*) g_source_pair_targets_list[ipair];
-        P23x = init_7level_dtable ( n_yp, kernel_n*kernel_n_geom, 2, Rcut_n, 4, 4, 4 );
+        P23x = init_8level_dtable ( n_yp, kernel_n*kernel_n_geom, 2, sparsening_n, Rcut_n, 4, 4, 4 );
         if ( P23x == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
@@ -2072,8 +2105,8 @@ int main(int argc, char **argv) {
          **********************************************************/
         if ( io_proc == 2 )
         {
-          int ncdim = 5;
-          int cdim[5] = { 2, 4, 4, 4, Lmax };
+          int ncdim = 6;
+          int cdim[6] = { 2, sparsening_n, 4, 4, 4, Lmax };
           char key[100];
           sprintf (key, "/P1/t%dx%dy%dz%d", gsy[0], gsy[1], gsy[2], gsy[3] );
 
@@ -2086,8 +2119,8 @@ int main(int argc, char **argv) {
         }
         if ( io_proc == 2 )
         {
-          int ncdim = 5;
-          int cdim[ncdim] = { 2, Rcut_n, 4, 4, 4 };
+          int ncdim = 6;
+          int cdim[ncdim] = { 2, sparsening_n, Rcut_n, 4, 4, 4 };
           char key[100];
           for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
           {
@@ -2101,7 +2134,7 @@ int main(int argc, char **argv) {
                          KQED_NAME[ikernel] );
 
                 exitstatus = write_h5_contraction (
-                    P23x[iyp][kernel_n_geom*ikernel+igeom][0][0][0][0], NULL, output_filename, key,
+                    P23x[iyp][kernel_n_geom*ikernel+igeom][0][0][0][0][0], NULL, output_filename, key,
                   "double", ncdim, cdim );
                 if ( exitstatus != 0 )
                 {
@@ -2113,7 +2146,7 @@ int main(int argc, char **argv) {
           }
         }
 
-        fini_7level_dtable( &P23x );
+        fini_8level_dtable( &P23x );
         
       } /* end of P1, P2, P3, ... */
       
@@ -2122,15 +2155,15 @@ int main(int argc, char **argv) {
         /***********************************************************
          * D_y^+ z g5 gsigma U_src
          ***********************************************************/
-        double *** dzu = init_3level_dtable ( 6, 12, 24 );
-        double *** dzsu = init_3level_dtable ( 4, 12, 24 );
+        double **** dzu = init_4level_dtable ( sparsening_n, 6, 12, 24 );
+        double **** dzsu = init_4level_dtable ( sparsening_n, 4, 12, 24 );
         if ( dzu == NULL || dzsu == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
           EXIT(12);
         }
-        double **** g_dzu  = init_4level_dtable ( 6, 4, 12, 24 );
-        double **** g_dzsu = init_4level_dtable ( 4, 4, 12, 24 );
+        double ***** g_dzu  = init_5level_dtable ( sparsening_n, 6, 4, 12, 24 );
+        double ***** g_dzsu = init_5level_dtable ( sparsening_n, 4, 4, 12, 24 );
         if ( g_dzu == NULL || g_dzsu == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
@@ -2148,6 +2181,7 @@ int main(int argc, char **argv) {
         /***********************************************************
          * TEST WRITE dzu
          ***********************************************************/
+        for (int isparse = 0; isparse < sparsening_n; isparse++){
         for ( int k = 0; k < 6; k++ )
         {
           for ( int ia = 0; ia < 12; ia++ )
@@ -2157,11 +2191,11 @@ int main(int argc, char **argv) {
               double const g5sign = 1. - 2. * ( (ib/3) > 1 );
 
               fprintf (
-                  stdout, "[test_dzu] %d seq fl %d yv %3d %3d %3d %3d, k %d isnk %2d isrc %2d   %25.16e %25.16e\n",
-                  g_cart_id, iflavor, yv[0], yv[1], yv[2], yv[3], k, ib, ia,
-                  g5sign * dzu[k][ia][2*ib  ], g5sign * dzu[k][ia][2*ib+1] );
+                  stdout, "[test_dzu] %d seq fl %d yv %3d %3d %3d %3d, sp %d, k %d isnk %2d isrc %2d   %25.16e %25.16e\n",
+                  g_cart_id, iflavor, yv[0], yv[1], yv[2], yv[3], isparse, k, ib, ia,
+                  g5sign * dzu[isparse][k][ia][2*ib  ], g5sign * dzu[isparse][k][ia][2*ib+1] );
             }}
-        }
+        }}
         /***********************************************************
          * END OF TEST
          ***********************************************************/
@@ -2171,6 +2205,7 @@ int main(int argc, char **argv) {
         /***********************************************************
          * TEST WRITE dzsu
          ***********************************************************/
+        for (int isparse = 0; isparse < sparsening_n; isparse++){
         for ( int sigma = 0; sigma < 4; sigma++ )
         {
           for ( int ia = 0; ia < 12; ia++ )
@@ -2180,12 +2215,12 @@ int main(int argc, char **argv) {
               double const g5sign = 1. - 2. * ( (ib/3) > 1 );
 
               fprintf (
-                  stdout, "[test_dzsu] %d seq fl %d yv %3d %3d %3d %3d, sigma %d isnk %2d isrc %2d   %25.16e %25.16e\n",
-                  g_cart_id, iflavor, yv[0], yv[1], yv[2], yv[3], sigma, ib, ia,
-                  g5sign * dzsu[sigma][ia][2*ib  ], g5sign * dzsu[sigma][ia][2*ib+1] );
+                  stdout, "[test_dzsu] %d seq fl %d yv %3d %3d %3d %3d, sp %d, sigma %d isnk %2d isrc %2d   %25.16e %25.16e\n",
+                  g_cart_id, iflavor, yv[0], yv[1], yv[2], yv[3], isparse, sigma, ib, ia,
+                  g5sign * dzsu[isparse][sigma][ia][2*ib  ], g5sign * dzsu[isparse][sigma][ia][2*ib+1] );
             }
           }
-        }
+        }}
         /***********************************************************
          * END OF TEST
          ***********************************************************/
@@ -2201,18 +2236,21 @@ int main(int argc, char **argv) {
         gettimeofday ( &ta, (struct timezone *)NULL );
 #endif
 
-        double ** local_kernel_sum = init_2level_dtable(kernel_n , Rcut_n);
+        double *** local_kernel_sum = init_3level_dtable(kernel_n , sparsening_n, Rcut_n);
         compute_4pt_contraction(
             fwd_src, fwd_y, g_dzu, g_dzsu, gsx, iflavor, xunit, yv,
             local_kernel_sum, kqed_t, VOLUME, Rcut2_bins, Rcut_n);
         for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
         {
-          for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
-          {
-            kernel_sum[ikernel][iflavor][iy][iRcut] = local_kernel_sum[ikernel][iRcut];
+          for (int isparse = 0; isparse < sparsening_n; isparse++)
+          { 
+            for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
+            {
+              kernel_sum[ikernel][iflavor][iy][isparse][iRcut] = local_kernel_sum[ikernel][isparse][iRcut];
+            }
           }
         }
-        fini_2level_dtable( &local_kernel_sum );
+        fini_3level_dtable( &local_kernel_sum );
 #if _WITH_TIMER
         gettimeofday ( &tb, (struct timezone *)NULL );
         show_time ( &ta, &tb, "hlbl_mII_invert_contract", "kernel-sum", io_proc == 2 );
@@ -2231,7 +2269,7 @@ int main(int argc, char **argv) {
               stdout,
               "# [hlbl_mII_invert_contract] kernel_sum iflavor=%d iy=%d %d: %f\n",
               iflavor, iy, ikernel,
-              kernel_sum[ikernel][iflavor][iy][0]);
+              kernel_sum[ikernel][iflavor][iy][0][0]);
         }
         /***********************************************************
          * END OF TEST
@@ -2241,10 +2279,10 @@ int main(int argc, char **argv) {
         /***********************************************************/
         /***********************************************************/
 
-        fini_3level_dtable ( &dzu    );
-        fini_3level_dtable ( &dzsu   );
-        fini_4level_dtable ( &g_dzu  );
-        fini_4level_dtable ( &g_dzsu );
+        fini_4level_dtable ( &dzu    );
+        fini_4level_dtable ( &dzsu   );
+        fini_5level_dtable ( &g_dzu  );
+        fini_5level_dtable ( &g_dzsu );
 
       }  /* end of loop on flavor */
 
@@ -2256,12 +2294,12 @@ int main(int argc, char **argv) {
     /***********************************************************
      * sum over MPI processes
      ***********************************************************/
-    int const nitem = kernel_n * 2 * ( ymax + 1 ) * Rcut_n;
+    int const nitem = kernel_n * 2 * ( ymax + 1 ) * sparsening_n * Rcut_n;
     double * mbuffer = init_1level_dtable ( nitem );
 
-    memcpy ( mbuffer, kernel_sum[0][0][0], nitem * sizeof ( double ) );
+    memcpy ( mbuffer, kernel_sum[0][0][0][0], nitem * sizeof ( double ) );
 
-    if ( MPI_Reduce ( mbuffer, kernel_sum[0][0][0], nitem, MPI_DOUBLE, MPI_SUM, 0, g_cart_grid ) != MPI_SUCCESS )
+    if ( MPI_Reduce ( mbuffer, kernel_sum[0][0][0][0], nitem, MPI_DOUBLE, MPI_SUM, 0, g_cart_grid ) != MPI_SUCCESS )
     {
       fprintf (stderr, "[hlbl_mII_invert_contract] Error from MP_Reduce  %s %d\n", __FILE__, __LINE__ );
       EXIT(12);
@@ -2277,12 +2315,13 @@ int main(int argc, char **argv) {
       for (int jker = 0; jker < kernel_n; ++jker) {
         for (int iflavor = 0; iflavor < 2; ++iflavor)  {
           for (int iy = 0; iy < ymax+1; ++iy) {
-            for (int iRcut = 0; iRcut < Rcut_n; ++iRcut)
-            {
-              fprintf(
-                stdout,
-                "# [hlbl_mII_invert_contract] final kernel_sum iflavor=%d iy=%d jker=%d iRcut=%d: %.18g\n",
-                iflavor, iy, jker, iRcut, kernel_sum[jker][iflavor][iy][iRcut]);
+            for (int isparse = 0; isparse < sparsening_n; ++isparse) {
+              for (int iRcut = 0; iRcut < Rcut_n; ++iRcut) {
+                fprintf(
+                  stdout,
+                  "# [hlbl_mII_invert_contract] final kernel_sum iflavor=%d iy=%d jker=%d iRcut=%d: %.18g\n",
+                  iflavor, iy, jker, iRcut, kernel_sum[jker][iflavor][iy][isparse][iRcut]);
+              }
             }
           }
         }
@@ -2298,14 +2337,14 @@ int main(int argc, char **argv) {
 
     if ( io_proc == 2 )
     {
-      int ncdim = 3;
-      int cdim[3] = { 2, ymax+1 , Rcut_n};
+      int ncdim = 4;
+      int cdim[4] = { 2, ymax+1 , sparsening_n, Rcut_n};
       char key[100];
       for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
       {
         sprintf (key, "t%dx%dy%dz%d/%s", gsx[0], gsx[1], gsx[2], gsx[3], KQED_NAME[ikernel] );
 
-        exitstatus = write_h5_contraction ( kernel_sum[ikernel][0][0], NULL, output_filename, key, "double", ncdim, cdim );
+        exitstatus = write_h5_contraction ( kernel_sum[ikernel][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
         if ( exitstatus != 0 )
         {
           fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
@@ -2314,7 +2353,7 @@ int main(int argc, char **argv) {
       }
     }
       
-    fini_4level_dtable ( &kernel_sum );
+    fini_5level_dtable ( &kernel_sum );
 
   }  /* end of loop on source locations */
 
@@ -2328,7 +2367,7 @@ int main(int argc, char **argv) {
   fini_prop ( &fwd_src );
   fini_prop ( &fwd_y );
 
-  fini_5level_dtable ( &P1 );
+  fini_6level_dtable ( &P1 );
 
 #ifndef HAVE_TMLQCD_LIBWRAPPER
   free(g_gauge_field);
