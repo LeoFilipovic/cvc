@@ -5,6 +5,7 @@ namespace cvc {
 
 void spinor_scalar_product_re ( double * const r, double * const xi, double * const phi, unsigned int const V);
 void spinor_scalar_product_co( complex * const w, double * const xi, double * const phi, unsigned int const V);
+void spinor_scalar_product_co_mask( complex * const w, double * const xi, double * const phi, unsigned int const V, int **** sparse_mask);
 
 void eo_spinor_spatial_scalar_product_co( double _Complex * w, double * const xi, double * const phi, int const eo);
 

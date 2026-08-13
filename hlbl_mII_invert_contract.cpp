@@ -1,7 +1,7 @@
 /****************************************************
  * hlbl_mII_invert_contract
  ****************************************************/
-
+#include <fstream>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -96,7 +96,7 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
 #endif
 #endif
 
-#define sparsening_n 5
+#define sparsening_n 7
 
 void QED_kernel_L0P4( const double xv[4], const double yv[4], const struct QED_kernel_temps t, double kerv[6][4][4][4] )
 {
@@ -278,7 +278,7 @@ inline void compute_2p2_pieces(
     const prop_t fwd_y, double ****** P1, double ******** P23x,
     const int* gsw, int iflavor, int io_proc, int n_y, const int * gycoords,
     const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
-    unsigned VOLUME, int Nconf, const int* Rcut2_bins, unsigned const Rcut_n) {
+    unsigned VOLUME, int Nconf, const int* Rcut2_bins, unsigned const Rcut_n, int ***** sparse_masks) {
 
   struct timeval ta, tb, ta2, tb2;
   
@@ -409,7 +409,7 @@ inline void compute_2p2_pieces(
 inline void compute_dzu_dzsu(
     const prop_t fwd_src, const prop_t fwd_y, double **** dzu, double **** dzsu,
     double ***** g_dzu, double ***** g_dzsu, const int* gsx, int iflavor, int io_proc,
-    double ** spinor_work, unsigned VOLUME) {
+    double ** spinor_work, unsigned VOLUME, int ***** sparse_masks) {
 
   struct timeval ta, tb;
 
@@ -514,7 +514,7 @@ inline void compute_4pt_contraction(
     const prop_t fwd_src, const prop_t fwd_y,
     double ***** const g_dzu, double ***** const g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
-    double *** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, const int* Rcut2_bins, unsigned const Rcut_n) {
+    double *** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, const int* Rcut2_bins, unsigned const Rcut_n, int ***** sparse_masks) {
   constexpr size_t n_g_dzu = 6 * 4 * 12 * 24;
   constexpr size_t n_g_dzsu = 4 * 4 * 12 * 24;
   double i_kernel_sum[kernel_n*Rcut_n];
@@ -613,7 +613,7 @@ inline void compute_2p2_pieces(
     const prop_t fwd_y, double ****** P1, double ******** P23x,
     const int* gsw, int iflavor, int io_proc, int n_y, const int * gycoords,
     const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
-    unsigned VOLUME, int Nconf, const int* Rcut2_bins, unsigned const Rcut_n) {
+    unsigned VOLUME, int Nconf, const int* Rcut2_bins, unsigned const Rcut_n, int ***** sparse_masks) {
 
   struct timeval ta, tb;
 
@@ -712,9 +712,14 @@ inline void compute_2p2_pieces(
             ( g_lexic2coords[iz][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
             ( g_lexic2coords[iz][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
             ( g_lexic2coords[iz][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global };
+          int const z_absolute[4] = {
+            ( g_lexic2coords[iz][0] + g_proc_coords[0] * T  + T_global  ) % T_global,
+            ( g_lexic2coords[iz][1] + g_proc_coords[1] * LX + LX_global ) % LX_global,
+            ( g_lexic2coords[iz][2] + g_proc_coords[2] * LY + LY_global ) % LY_global,
+            ( g_lexic2coords[iz][3] + g_proc_coords[3] * LZ + LZ_global ) % LZ_global };
           for ( int rho = 0; rho < 4; rho++ )
           {
-            local_P1[isparse][rho][sigma][nu][z[rho]] += pimn[sigma][nu][iz];
+            local_P1[isparse][rho][sigma][nu][z[rho]] += pimn[sigma][nu][iz] * sparse_masks[isparse][z_absolute[0]][z_absolute[1]][z_absolute[2]][z_absolute[3]];
           }
         }
       }
@@ -782,6 +787,12 @@ inline void compute_2p2_pieces(
     site_map_zerohalf ( yv, y );
     for ( unsigned int ix = 0; ix < VOLUME; ix++ )
     {
+      int const x_absolute[4] = {
+        ( g_lexic2coords[ix][0] + g_proc_coords[0] * T  + T_global  ) % T_global,
+        ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX + LX_global ) % LX_global,
+        ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY + LY_global ) % LY_global,
+        ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ + LZ_global ) % LZ_global };
+
       int const x[4] = {
         ( g_lexic2coords[ix][0] + g_proc_coords[0] * T  - gsw[0] + T_global  ) % T_global,
         ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
@@ -877,21 +888,21 @@ inline void compute_2p2_pieces(
                 {
                   // P2_0
                   local_P23x[yi][ikernel*kernel_n_geom + 0][isparse][iRcut][rho][sigma][nu] +=
-                      kerv1[k][mu][nu][lambda] * pimn[mu][lambda][ix];
+                      kerv1[k][mu][nu][lambda] * pimn[mu][lambda][ix] * sparse_masks[isparse][x_absolute[0]][x_absolute[1]][x_absolute[2]][x_absolute[3]];
                   // P2_1
                   local_P23x[yi][ikernel*kernel_n_geom + 1][isparse][iRcut][rho][sigma][nu] +=
-                      kerv2[k][nu][mu][lambda] * pimn[mu][lambda][ix];
+                      kerv2[k][nu][mu][lambda] * pimn[mu][lambda][ix] * sparse_masks[isparse][x_absolute[0]][x_absolute[1]][x_absolute[2]][x_absolute[3]];
                   // P3
                   local_P23x[yi][ikernel*kernel_n_geom + 2][isparse][iRcut][rho][sigma][nu] +=
-                      kerv3[k][mu][lambda][nu] * pimn[mu][lambda][ix];
+                      kerv3[k][mu][lambda][nu] * pimn[mu][lambda][ix] * sparse_masks[isparse][x_absolute[0]][x_absolute[1]][x_absolute[2]][x_absolute[3]];
                   // P4_0
                   local_P23x[yi][ikernel*kernel_n_geom + 3][isparse][iRcut][rho][sigma][nu] +=
-                      kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                      kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix] * sparse_masks[isparse][x_absolute[0]][x_absolute[1]][x_absolute[2]][x_absolute[3]];
                   // P4_1
                 local_P23x[yi][ikernel*kernel_n_geom + 4][isparse][iRcut][rho][sigma][nu] +=
-                    (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                    (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix] * sparse_masks[isparse][x_absolute[0]][x_absolute[1]][x_absolute[2]][x_absolute[3]];
                 local_P23x[yi][ikernel*kernel_n_geom + 4][isparse][iRcut][sigma][rho][nu] -=
-                    (xv[sigma]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                    (xv[sigma]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix] * sparse_masks[isparse][x_absolute[0]][x_absolute[1]][x_absolute[2]][x_absolute[3]];
 
                 }
               }
@@ -960,7 +971,7 @@ inline void compute_2p2_pieces(
 inline void compute_dzu_dzsu(
     const prop_t fwd_src, const prop_t fwd_y, double **** dzu, double **** dzsu,
     double ***** g_dzu, double ***** g_dzsu, const int* gsx, int iflavor, int io_proc,
-    double ** spinor_work, unsigned VOLUME) {
+    double ** spinor_work, unsigned VOLUME, int ***** sparse_masks) {
 
   struct timeval ta, tb;
 
@@ -1005,9 +1016,9 @@ inline void compute_dzu_dzsu(
 
       for(int ib = 0; ib < 12; ib++ )
       {
-        complex w = {0.,0.};
-        spinor_scalar_product_co ( &w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME );
         for (int isparse = 0; isparse < sparsening_n; ++isparse){
+          complex w = {0.,0.};
+          spinor_scalar_product_co_mask ( &w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME, sparse_masks[isparse] );
           dzu[isparse][k][ia][2*ib  ] = w.re;
           dzu[isparse][k][ia][2*ib+1] = w.im;
         }
@@ -1024,8 +1035,8 @@ inline void compute_dzu_dzsu(
       {
         spinor_field_eq_gamma_ti_spinor_field ( spinor_work[0], sigma, fwd_src[iflavor][ia], VOLUME );
         g5_phi ( spinor_work[0], VOLUME );
-        spinor_scalar_product_co ( &w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME );
         for (int isparse = 0; isparse < sparsening_n; ++isparse){
+          spinor_scalar_product_co_mask ( &w, fwd_y[1-iflavor][ib], spinor_work[0], VOLUME, sparse_masks[isparse] );
           dzsu[isparse][sigma][ia][2*ib  ] = w.re;
           dzsu[isparse][sigma][ia][2*ib+1] = w.im;
         }
@@ -1094,7 +1105,7 @@ inline void compute_4pt_contraction(
     const prop_t fwd_src, const prop_t fwd_y,
     double ***** const g_dzu, double ***** const g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
-    double *** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, const int* Rcut2_bins, unsigned const Rcut_n) {
+    double *** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, const int* Rcut2_bins, unsigned const Rcut_n, int ***** sparse_masks) {
 
 #ifdef HAVE_OPENMP
 #pragma omp parallel
@@ -1144,6 +1155,11 @@ inline void compute_4pt_contraction(
     x[2] = ( x[2] - gsx[2] + LY_global ) % LY_global;
     x[3] = ( x[3] - gsx[3] + LZ_global ) % LZ_global;
 
+    int const x_absolute[4] = {
+      ( g_lexic2coords[ix][0] + g_proc_coords[0] * T  + T_global  ) % T_global,
+      ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX + LX_global ) % LX_global,
+      ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY + LY_global ) % LY_global,
+      ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ + LZ_global ) % LZ_global };    
     int xv[4], xvzh[4];
     site_map ( xv, x );
     site_map_zerohalf ( xvzh, x );
@@ -1358,8 +1374,8 @@ inline void compute_4pt_contraction(
             {
               for ( int lambda = 0; lambda < 4; lambda++ )
               {
-                dtmp += ( kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu] ) * _corr_I[2*i]
-                    + kerv3[k][lambda][nu][mu] * _corr_II[2*i];
+                dtmp += (( kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu] ) * _corr_I[2*i]
+                    + kerv3[k][lambda][nu][mu] * _corr_II[2*i]) * sparse_masks[isparse][x_absolute[0]][x_absolute[1]][x_absolute[2]][x_absolute[3]];
 
                 i++;
               }
@@ -1495,17 +1511,36 @@ void usage() {
   fprintf(stdout, "Usage:    [options]\n");
   fprintf(stdout, "Options:  -f input <filename> : input filename for cvc  [default p2gg.input]\n");
   fprintf(stdout, "          -c                  : check propagator residual [default false]\n");
+  fprintf(stdout, "          -y                  : ymin [default 0]\n");
+  fprintf(stdout, "          -z                  : ymax [default 0]\n");
+  fprintf(stdout, "          -s                  : %d sparsening filenames separated by ,\n", sparsening_n);
   EXIT(0);
+}
+
+void read_in_files(char sparsening_filenames[sparsening_n][400], char tmp[sparsening_n*400], char delimiter) {
+  int start = 0;
+  int end = 0;
+  int sp_f_ind = 0;
+  for (int i = 0; i < sparsening_n*400; i++) {
+    if (tmp[i] == delimiter or tmp[i] == ']') {
+      end = i;
+      for (int j = 0; j < end - start; j++) {
+        sparsening_filenames[sp_f_ind][j] = tmp[start + j];
+      }
+      sp_f_ind++;
+      start = end+1;
+    }
+  }
 }
 
 int main(int argc, char **argv) {
 
   double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
   double const alat[2] = { 0.07951, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816 cD96 0.05688
-  unsigned const Rcut_n = 2; // Always check CUDA_N_RCUT in cuda_lattice.h
+  unsigned const Rcut_n = 8; // Always check CUDA_N_RCUT in cuda_lattice.h
   // int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
-  // int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
-  int const Rcut2_bins[Rcut_n-1] = {1}; //cB64;
+  int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+  // int const Rcut2_bins[Rcut_n-1] = {1}; //cB64;
 
 
   int c;
@@ -1520,14 +1555,15 @@ int main(int argc, char **argv) {
   struct timeval start_time, end_time;
   int ymax = 0;
   int ymin = 0;
-
+  int sparsening_filename_set = 0;
+  char sparsening_filenames[sparsening_n][400] = {{}};
   struct timeval ta, tb;
 
 #ifdef HAVE_MPI
   MPI_Init(&argc, &argv);
 #endif
 
-  while ((c = getopt(argc, argv, "ch?f:y:z:")) != -1) {
+  while ((c = getopt(argc, argv, "ch?f:y:z:s:")) != -1) {
     switch (c) {
     case 'f':
       strcpy(filename, optarg);
@@ -1542,6 +1578,22 @@ int main(int argc, char **argv) {
     case 'z':
       ymax = atoi ( optarg );
       break;
+    case 's':
+        char tmp[sparsening_n*400];
+        strcpy(tmp, optarg);
+        fprintf(stdout, "# [hlbl_mII_invert_contract] Have sparse files ");
+        fprintf(stdout, tmp);
+        fprintf(stdout, "\n");
+        fflush(stdout);
+        read_in_files(sparsening_filenames, tmp, ',');
+        fprintf(stdout, "# [hlbl_mII_invert_contract] The sparse files will be read as: ");
+        for(int sp_ind = 0; sp_ind < sparsening_n; sp_ind++){
+          fprintf(stdout, sparsening_filenames[sp_ind]);
+          fprintf(stdout, "  then  ");
+        }
+        fflush(stdout);
+        sparsening_filename_set=1;
+        break;
     case 'h':
     case '?':
     default:
@@ -1705,6 +1757,94 @@ int main(int argc, char **argv) {
    ***********************************************************/
   fprintf(stdout, "# [hlbl_mII_invert_contract] The VOLUME is %d\n", VOLUME );
   fflush(stdout);
+  /***********************************************************
+   ** reading the files specifying the sparsening
+   *********************************************************** */
+#if _WITH_TIMER
+      gettimeofday ( &ta, (struct timezone *)NULL );
+#endif
+  void *sparsenings[sparsening_n];
+  int size_of_sparsenings[sparsening_n] = {0};
+
+  for (int sp_ind = 0; sp_ind < sparsening_n; sp_ind++) {
+    fprintf(stdout, "# [hlbl_mII_invert_contract] reading file ");
+    fprintf(stdout, sparsening_filenames[sp_ind]);
+    fprintf(stdout, " for the coordinates of the sparsened integration.\n");
+    std::ifstream inputFile(sparsening_filenames[sp_ind], std::ios::binary);
+    if (!inputFile) {
+      fprintf(stderr, "[hlbl_mII_invert_contract] Error from reading sparsening file %s in %s %d\n", sparsening_filenames[sp_ind], __FILE__, __LINE__);
+      EXIT(7);
+    }
+    int size;
+    inputFile.read((char*)(&size), sizeof(size));
+    size_of_sparsenings[sp_ind] = size;
+    fprintf(stdout, "# [hlbl_mII_invert_contract] The size of the sparsening file is %d \n" , size);
+    int* tmp = new int[size];
+    inputFile.read((char*)tmp, sizeof(int) * size);
+
+    sparsenings[sp_ind] = malloc(sizeof(int)*size);
+    memcpy(sparsenings[sp_ind], tmp, size*sizeof(int));
+    inputFile.close();
+    fprintf(stdout, "# [hlbl_mII_invert_contract] The first couple of points of the sparsening file are: ");
+    for (int i = 0; i < 8; i++) {
+      fprintf(stdout, "%d ", tmp[i]);
+    }
+    fprintf(stdout, "\n");
+    delete[] tmp;
+  }
+
+  const int latdim[4] = {T_global, LX_global, LY_global, LZ_global};
+  int V = latdim[0] * latdim[1] * latdim[2] * latdim[3];
+  int ***** sparse_masks = init_5level_itable ( sparsening_n , T_global, LX_global, LY_global, LZ_global);
+
+  for (int sp_ind = 0; sp_ind < sparsening_n; sp_ind++) {
+    for (int point_ind = 0; point_ind < size_of_sparsenings[sp_ind]; point_ind++){
+      int coords[4];
+      int x_num = ( (int *) sparsenings[sp_ind] ) [point_ind];
+      int modulator = V;
+      for (int c_ind = 0; c_ind < 4; c_ind++) {
+        modulator /= latdim[c_ind];
+        coords[c_ind] = x_num / modulator;
+        x_num -= modulator * coords[c_ind];
+      }
+      sparse_masks[sp_ind][coords[0]][coords[1]][coords[2]][coords[3]] += 1;
+    }
+  }
+
+  fprintf(stdout, "# [hlbl_mII_invert_contract] Sparsening mask initialization successful.\n");
+
+#if 0
+  for (int sp_ind = 0; sp_ind < sparsening_n; sp_ind++){
+    for (int it=0; it < T_global; it++){
+      for (int ix=0; ix < LX_global; ix++){
+        for (int iy=0; iy < LY_global; iy++){
+          for (int iz=0; iz < LZ_global; iz++){
+            fprintf(stdout, "# [mask_check] mask %d, t %d, x %d, y %d, z %d: mask %d \n", sp_ind, it , ix , iy , iz , sparse_masks[sp_ind][it][ix][iy][iz]);
+          }
+        }
+      }
+    }    
+  
+  for ( unsigned int ix = 0; ix < VOLUME; ix++ )
+    {
+      int const x_absolute[4] = {
+        ( g_lexic2coords[ix][0] + g_proc_coords[0] * T  + T_global  ) % T_global,
+        ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX + LX_global ) % LX_global,
+        ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY + LY_global ) % LY_global,
+        ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ + LZ_global ) % LZ_global };
+      fprintf(stdout, "# [mask_check_alt] mask %d, t %d, x %d, y %d, z %d: mask %d \n", sp_ind, x_absolute[0] , x_absolute[1] , x_absolute[2] , x_absolute[3] , sparse_masks[sp_ind][x_absolute[0]][x_absolute[1]][x_absolute[2]][x_absolute[3]]);
+    }
+  }
+#endif
+
+  
+#if _WITH_TIMER
+      gettimeofday ( &tb, (struct timezone *)NULL );
+      show_time ( &ta, &tb, "hlbl_mII_invert_contract", "read sparse files and initialize masks", io_proc == 2 );
+#endif
+
+  fflush(stdout);
+  // EXIT(0);
 
   if ( first_solve_dummy )
   {
@@ -2102,7 +2242,7 @@ int main(int argc, char **argv) {
          **********************************************************/
         compute_2p2_pieces(
             fwd_y, P1, P23x, gsy, iflavor, io_proc, n_yp, gyp,
-            xunit, spinor_work, kqed_t, VOLUME, Nconf, Rcut2_bins, Rcut_n);
+            xunit, spinor_work, kqed_t, VOLUME, Nconf, Rcut2_bins, Rcut_n, sparse_masks);
 
         /**********************************************************
          * write P1, P2, P3, ...
@@ -2179,9 +2319,9 @@ int main(int argc, char **argv) {
          ***********************************************************/
         compute_dzu_dzsu(
             fwd_src, fwd_y, dzu, dzsu, g_dzu, g_dzsu, gsx, iflavor, io_proc,
-            spinor_work, VOLUME);
+            spinor_work, VOLUME, sparse_masks);
 
-#if 1
+#if 0
         /***********************************************************
          * TEST WRITE dzu
          ***********************************************************/
@@ -2205,7 +2345,7 @@ int main(int argc, char **argv) {
          ***********************************************************/
 #endif
 
-#if 1
+#if 0
         /***********************************************************
          * TEST WRITE dzsu
          ***********************************************************/
@@ -2243,7 +2383,7 @@ int main(int argc, char **argv) {
         double *** local_kernel_sum = init_3level_dtable(kernel_n , sparsening_n, Rcut_n);
         compute_4pt_contraction(
             fwd_src, fwd_y, g_dzu, g_dzsu, gsx, iflavor, xunit, yv,
-            local_kernel_sum, kqed_t, VOLUME, Rcut2_bins, Rcut_n);
+            local_kernel_sum, kqed_t, VOLUME, Rcut2_bins, Rcut_n, sparse_masks);
         for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
         {
           for (int isparse = 0; isparse < sparsening_n; isparse++)

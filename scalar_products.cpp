@@ -98,6 +98,79 @@ void spinor_scalar_product_co ( complex * const w, double * const xi, double * c
 #endif
 }  /* end of spinor_scalar_product_co */
 
+/*********************************************
+ * complex-valued 4-dim scalar product of two
+ * spinor fields with a mask
+ *********************************************/
+void spinor_scalar_product_co_mask( complex * const w, double * const xi, double * const phi, unsigned int const V, int **** sparse_mask) {
+
+  complex paccum;
+  
+#ifdef HAVE_MPI
+ 
+#endif
+#ifdef HAVE_OPENMP
+  omp_lock_t writelock;
+#endif
+  paccum.re = 0.;
+  paccum.im = 0.;
+
+#ifdef HAVE_OPENMP
+  omp_init_lock(&writelock);
+#pragma omp parallel default(shared)
+{
+#endif
+  complex p2;
+  p2.re = 0.;
+  p2.im = 0.;
+
+#ifdef HAVE_OPENMP
+#pragma omp for
+#endif
+  for( unsigned int ix = 0; ix < V; ix ++ ) {
+    unsigned int const iix = _GSI( ix );
+      int const x[4] = {
+    ( g_lexic2coords[ix][0] + g_proc_coords[0] * T  + T_global  ) % T_global,
+    ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX + LX_global ) % LX_global,
+    ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY + LY_global ) % LY_global,
+    ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ + LZ_global ) % LZ_global };
+
+    _co_pl_eq_fv_dag_ti_fv(&p2, xi+iix, phi+iix);
+    p2.re *= sparse_mask[x[0]][x[1]][x[2]][x[3]];
+  }
+#ifdef HAVE_OPENMP
+  omp_set_lock(&writelock);
+#endif
+
+  paccum.re += p2.re;
+  paccum.im += p2.im;
+
+#ifdef HAVE_OPENMP
+  omp_unset_lock(&writelock);
+}  /* end of parallel region */
+  omp_destroy_lock(&writelock);
+#endif
+
+  /* fprintf(stdout, "# [spinor_scalar_product_co] %d local: %e %e\n", g_cart_id, paccum.re, paccum.im); */
+
+#ifdef HAVE_MPI
+  complex pall;
+  pall.re=0.; pall.im=0.;
+  if ( MPI_Allreduce(&paccum, &pall, 2, MPI_DOUBLE, MPI_SUM, g_cart_grid) != MPI_SUCCESS ) {
+    if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
+    w->re = sqrt( -1. );
+    w->im = sqrt( -1. );
+  } else {
+    w->re = pall.re;
+    w->im = pall.im;
+  }
+#else
+  w->re = paccum.re;
+  w->im = paccum.im;
+#endif
+}  /* end of spinor_scalar_product_co */
+
+
 /*********************************************/
 /*********************************************/
 
