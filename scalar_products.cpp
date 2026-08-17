@@ -137,6 +137,7 @@ void spinor_scalar_product_co_mask( complex * const w, double * const xi, double
 
     _co_pl_eq_fv_dag_ti_fv(&p2, xi+iix, phi+iix);
     p2.re *= sparse_mask[x[0]][x[1]][x[2]][x[3]];
+    p2.im *= sparse_mask[x[0]][x[1]][x[2]][x[3]];
   }
 #ifdef HAVE_OPENMP
   omp_set_lock(&writelock);

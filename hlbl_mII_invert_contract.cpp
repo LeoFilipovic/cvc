@@ -873,6 +873,8 @@ inline void compute_2p2_pieces(
         KQED_LX[ikernel]( ym_mi_xm, xm_minus, kqed_t, kerv4 );
         for( int isparse = 0; isparse < sparsening_n; isparse++)
         {
+          fprintf(stdout, "# [mask_check_in_2p2] mask %d, t %d, x %d, y %d, z %d: mask %d \n", isparse, x_absolute[0] , x_absolute[1] , x_absolute[2] , x_absolute[3] , sparse_masks[isparse][x_absolute[0]][x_absolute[1]][x_absolute[2]][x_absolute[3]]);
+
           for( int k = 0; k < 6; k++ )
           {
             int const rho   = idx_comb[k][0];
@@ -1591,6 +1593,7 @@ int main(int argc, char **argv) {
           fprintf(stdout, sparsening_filenames[sp_ind]);
           fprintf(stdout, "  then  ");
         }
+        fprintf(stdout, "  nothing  \n");
         fflush(stdout);
         sparsening_filename_set=1;
         break;
@@ -1767,9 +1770,8 @@ int main(int argc, char **argv) {
   int size_of_sparsenings[sparsening_n] = {0};
 
   for (int sp_ind = 0; sp_ind < sparsening_n; sp_ind++) {
-    fprintf(stdout, "# [hlbl_mII_invert_contract] reading file ");
-    fprintf(stdout, sparsening_filenames[sp_ind]);
-    fprintf(stdout, " for the coordinates of the sparsened integration.\n");
+    fprintf(stdout, "# [hlbl_mII_invert_contract] reading file %d %s for the coordinates of the sparsened integration.\n", sp_ind, sparsening_filenames[sp_ind]);
+    fflush(stdout);
     std::ifstream inputFile(sparsening_filenames[sp_ind], std::ios::binary);
     if (!inputFile) {
       fprintf(stderr, "[hlbl_mII_invert_contract] Error from reading sparsening file %s in %s %d\n", sparsening_filenames[sp_ind], __FILE__, __LINE__);
@@ -1778,18 +1780,15 @@ int main(int argc, char **argv) {
     int size;
     inputFile.read((char*)(&size), sizeof(size));
     size_of_sparsenings[sp_ind] = size;
-    fprintf(stdout, "# [hlbl_mII_invert_contract] The size of the sparsening file is %d \n" , size);
+    fprintf(stdout, "# [hlbl_mII_invert_contract] The size of sparsening file %d is %d \n" , sp_ind, size);
     int* tmp = new int[size];
     inputFile.read((char*)tmp, sizeof(int) * size);
 
     sparsenings[sp_ind] = malloc(sizeof(int)*size);
     memcpy(sparsenings[sp_ind], tmp, size*sizeof(int));
     inputFile.close();
-    fprintf(stdout, "# [hlbl_mII_invert_contract] The first couple of points of the sparsening file are: ");
-    for (int i = 0; i < 8; i++) {
-      fprintf(stdout, "%d ", tmp[i]);
-    }
-    fprintf(stdout, "\n");
+    fprintf(stdout, "# [hlbl_mII_invert_contract] The first 10 points of sparsening file %d are: %d %d %d %d %d %d %d %d %d %d \n",
+      sp_ind, tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], tmp[6], tmp[7], tmp[8], tmp[9]);
     delete[] tmp;
   }
 
