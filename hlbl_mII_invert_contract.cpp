@@ -97,6 +97,11 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
 #endif
 
 #define sparsening_n 7
+#ifdef CUDA_N_SPARSENING
+#if CUDA_N_SPARSENING != sparsening_n
+#error "Mismatching number of sparsenings between CUDA and CPU"
+#endif
+#endif
 
 void QED_kernel_L0P4( const double xv[4], const double yv[4], const struct QED_kernel_temps t, double kerv[6][4][4][4] )
 {
@@ -289,8 +294,8 @@ inline void compute_2p2_pieces(
   double* d_P1 = NULL;
   double* d_P23x = NULL;
   const int Lmax = get_Lmax();
-  const size_t n_P1 = 4 * 4 * 4 * Lmax;
-  const size_t n_P23x = n_y * kernel_n * kernel_n_geom * Rcut_n * 4 * 4 * 4;
+  const size_t n_P1 = sparsening_n * 4 * 4 * 4 * Lmax;
+  const size_t n_P23x = n_y * kernel_n * kernel_n_geom * sparsening_n * Rcut_n * 4 * 4 * 4;
   const size_t sizeof_P1 = n_P1 * sizeof(double);
   const size_t sizeof_P23x = n_P23x * sizeof(double);
   checkCudaErrors(cudaMalloc((void**)&d_P1, sizeof_P1));
@@ -328,7 +333,7 @@ inline void compute_2p2_pieces(
 
   cu_2p2_pieces(
       d_P1, d_P23x, fwd_y, iflavor, d_proc_coords, d_gsw, n_y, d_gycoords,
-      d_xunit, kqed_t, global_geom, local_geom, Rcut2_bins, Rcut_n);
+      d_xunit, kqed_t, global_geom, local_geom, Rcut2_bins, Rcut_n, sparse_masks);
 
 #if _WITH_TIMER
   checkCudaErrors(cudaDeviceSynchronize());
@@ -339,7 +344,7 @@ inline void compute_2p2_pieces(
 
   double* local_P1 = (double*)malloc(sizeof_P1);
   double* local_P23x = (double*)malloc(sizeof_P23x);
-  double ****** all_P23x = init_6level_dtable ( n_y, kernel_n*kernel_n_geom, Rcut_n, 4, 4, 4 );
+  double ******* all_P23x = init_7level_dtable ( n_y, kernel_n*kernel_n_geom, sparsening_n, Rcut_n, 4, 4, 4 );
   if ( local_P1 == NULL || local_P23x == NULL || all_P23x == NULL )
   {
     fprintf ( stderr, "Error alloc local_P1,23x or all_P23x\n" );
@@ -353,17 +358,17 @@ inline void compute_2p2_pieces(
 
 #ifdef HAVE_MPI
   // TODO: just MPI_Reduce?
-  if ( MPI_Allreduce(local_P1, P1[iflavor][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  if ( MPI_Allreduce(local_P1, P1[iflavor][0][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
-  if ( MPI_Allreduce(local_P23x, all_P23x[0][0][0][0][0], n_P23x, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  if ( MPI_Allreduce(local_P23x, all_P23x[0][0][0][0][0][0], n_P23x, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
 #else
-  memcpy((void*)P1[iflavor][0][0][0], (void*)local_P1, sizeof_P1);
-  memcpy((void*)all_P23x[0][0][0][0][0], (void*)local_P23x, sizeof_P23x);
+  memcpy((void*)P1[iflavor][0][0][0][0], (void*)local_P1, sizeof_P1);
+  memcpy((void*)all_P23x[0][0][0][0][0][0], (void*)local_P23x, sizeof_P23x);
 #endif
 
   // interleave data into output array
@@ -373,11 +378,14 @@ inline void compute_2p2_pieces(
     {
       for ( int igeom = 0; igeom < kernel_n_geom; igeom++ )
       {
-        for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
+        for ( int isparse = 0; isparse < sparsening_n; isparse++)
         {
-        memcpy(
-            (void*)P23x[yi][kernel_n_geom*ikernel + igeom][iflavor][iRcut][0][0],
-            (void*)all_P23x[yi][kernel_n_geom*ikernel + igeom][iRcut][0][0], sizeof(double)*4*4*4);
+          for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
+          {
+          memcpy(
+              (void*)P23x[yi][kernel_n_geom*ikernel + igeom][iflavor][isparse][iRcut][0][0],
+              (void*)all_P23x[yi][kernel_n_geom*ikernel + igeom][isparse][iRcut][0][0], sizeof(double)*4*4*4);
+          }
         }
       }
     }
@@ -385,7 +393,7 @@ inline void compute_2p2_pieces(
 
   free(local_P1);
   free(local_P23x);
-  fini_6level_dtable ( &all_P23x );
+  fini_7level_dtable ( &all_P23x );
 
   checkCudaErrors(cudaFree(d_P1));
   checkCudaErrors(cudaFree(d_P23x));
@@ -419,8 +427,8 @@ inline void compute_dzu_dzsu(
 
   double* d_dzu = NULL;
   double* d_dzsu = NULL;
-  constexpr size_t n_dzu = 6 * 12 * 24;
-  constexpr size_t n_dzsu = 4 * 12 * 24;
+  constexpr size_t n_dzu = sparsening_n * 6 * 12 * 24;
+  constexpr size_t n_dzsu = sparsening_n * 4 * 12 * 24;
   double local_dzu[n_dzu];
   double local_dzsu[n_dzsu];
   size_t sizeof_dzu = n_dzu * sizeof(double);
@@ -441,7 +449,7 @@ inline void compute_dzu_dzsu(
   Coord d_gsx = { .t = gsx[0], .x = gsx[1], .y = gsx[2], .z = gsx[3] };
   cu_dzu_dzsu(
       d_dzu, d_dzsu, fwd_src, fwd_y, iflavor, d_proc_coords, d_gsx,
-      global_geom, local_geom);
+      global_geom, local_geom, sparse_masks);
   checkCudaErrors(cudaDeviceSynchronize());
   checkCudaErrors(cudaMemcpy(
       (void*)local_dzu, (const void*)d_dzu, sizeof_dzu, cudaMemcpyDeviceToHost));
@@ -453,17 +461,17 @@ inline void compute_dzu_dzsu(
   checkCudaErrors(cudaFree(d_dzsu));
 
 #ifdef HAVE_MPI
-  if ( MPI_Allreduce(local_dzu, dzu[0][0], n_dzu, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  if ( MPI_Allreduce(local_dzu, dzu[0][0][0], n_dzu, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
-  if ( MPI_Allreduce(local_dzsu, dzsu[0][0], n_dzsu, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  if ( MPI_Allreduce(local_dzsu, dzsu[0][0][0], n_dzsu, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
 #else
-  memcpy((void*)dzu[0][0], (void*)local_dzu, sizeof_dzu);
-  memcpy((void*)dzsu[0][0], (void*)local_dzsu, sizeof_dzsu);
+  memcpy((void*)dzu[0][0][0], (void*)local_dzu, sizeof_dzu);
+  memcpy((void*)dzsu[0][0][0], (void*)local_dzsu, sizeof_dzsu);
 #endif
 
 #if _WITH_TIMER
@@ -476,30 +484,36 @@ inline void compute_dzu_dzsu(
   gettimeofday ( &ta, (struct timezone *)NULL );
 #endif
 
-  for ( int k = 0; k < 6; k++ )
+  for ( int isparse = 0; isparse < sparsening_n; isparse++)
   {
-    double spinor1[24];
-    for(int ia = 0; ia < 12; ia++ )
+    for ( int k = 0; k < 6; k++ )
     {
-      _fv_eq_gamma_ti_fv ( spinor1, 5, dzu[k][ia] );
-
-      for ( int mu = 0; mu < 4; mu++ )
+      double spinor1[24];
+      for(int ia = 0; ia < 12; ia++ )
       {
-        _fv_eq_gamma_ti_fv ( g_dzu[k][mu][ia], mu, spinor1 );
+        _fv_eq_gamma_ti_fv ( spinor1, 5, dzu[isparse][k][ia] );
+
+        for ( int mu = 0; mu < 4; mu++ )
+        {
+          _fv_eq_gamma_ti_fv ( g_dzu[isparse][k][mu][ia], mu, spinor1 );
+        }
       }
     }
   }
 
-  for ( int k = 0; k < 4; k++ )
+  for ( int isparse = 0; isparse < sparsening_n; isparse++)
   {
-    double spinor1[24];
-    for(int ia = 0; ia < 12; ia++ )
+    for ( int k = 0; k < 4; k++ )
     {
-      _fv_eq_gamma_ti_fv ( spinor1, 5, dzsu[k][ia] );
-
-      for ( int mu = 0; mu < 4; mu++ )
+      double spinor1[24];
+      for(int ia = 0; ia < 12; ia++ )
       {
-        _fv_eq_gamma_ti_fv ( g_dzsu[k][mu][ia], mu, spinor1 );
+        _fv_eq_gamma_ti_fv ( spinor1, 5, dzsu[isparse][k][ia] );
+
+        for ( int mu = 0; mu < 4; mu++ )
+        {
+          _fv_eq_gamma_ti_fv ( g_dzsu[isparse][k][mu][ia], mu, spinor1 );
+        }
       }
     }
   }
@@ -515,9 +529,9 @@ inline void compute_4pt_contraction(
     double ***** const g_dzu, double ***** const g_dzsu,
     const int* gsx, int iflavor, const double xunit[2], const int yv[4],
     double *** kernel_sum, QED_kernel_temps kqed_t, unsigned VOLUME, const int* Rcut2_bins, unsigned const Rcut_n, int ***** sparse_masks) {
-  constexpr size_t n_g_dzu = 6 * 4 * 12 * 24;
-  constexpr size_t n_g_dzsu = 4 * 4 * 12 * 24;
-  double i_kernel_sum[kernel_n*Rcut_n];
+  constexpr size_t n_g_dzu = sparsening_n * 6 * 4 * 12 * 24;
+  constexpr size_t n_g_dzsu = sparsening_n * 4 * 4 * 12 * 24;
+  double i_kernel_sum[kernel_n*sparsening_n*Rcut_n];
   size_t sizeof_g_dzu = n_g_dzu * sizeof(double);
   size_t sizeof_g_dzsu = n_g_dzsu * sizeof(double);
   double* d_g_dzu = NULL;
@@ -525,12 +539,12 @@ inline void compute_4pt_contraction(
   checkCudaErrors(cudaMalloc((void**)&d_g_dzu, sizeof_g_dzu));
   checkCudaErrors(cudaMalloc((void**)&d_g_dzsu, sizeof_g_dzsu));
   checkCudaErrors(cudaMemcpy(
-      d_g_dzu, &g_dzu[0][0][0][0], sizeof_g_dzu, cudaMemcpyHostToDevice));
+      d_g_dzu, &g_dzu[0][0][0][0][0], sizeof_g_dzu, cudaMemcpyHostToDevice));
   checkCudaErrors(cudaMemcpy(
-      d_g_dzsu, &g_dzsu[0][0][0][0], sizeof_g_dzsu, cudaMemcpyHostToDevice));
+      d_g_dzsu, &g_dzsu[0][0][0][0][0], sizeof_g_dzsu, cudaMemcpyHostToDevice));
   double* d_kernel_sum = NULL;
-  checkCudaErrors(cudaMalloc((void**)&d_kernel_sum, kernel_n*Rcut_n*sizeof(double)));
-  checkCudaErrors(cudaMemset(d_kernel_sum, 0, kernel_n*Rcut_n*sizeof(double)));
+  checkCudaErrors(cudaMalloc((void**)&d_kernel_sum, kernel_n*sparsening_n*Rcut_n*sizeof(double)));
+  checkCudaErrors(cudaMemset(d_kernel_sum, 0, kernel_n*sparsening_n*Rcut_n*sizeof(double)));
   
   Coord d_proc_coords {
     .t = g_proc_coords[0],
@@ -546,10 +560,11 @@ inline void compute_4pt_contraction(
 
   cu_4pt_contraction(
       d_kernel_sum, d_g_dzu, d_g_dzsu, fwd_src, fwd_y, iflavor, d_proc_coords,
-      d_gsx, d_xunit, d_yv, kqed_t, global_geom, local_geom, Rcut2_bins, Rcut_n);
+      d_gsx, d_xunit, d_yv, kqed_t, global_geom, local_geom, Rcut2_bins, Rcut_n, sparse_masks);
+
 
   checkCudaErrors(cudaMemcpy(
-      &i_kernel_sum[0], d_kernel_sum, kernel_n*Rcut_n*sizeof(double), cudaMemcpyDeviceToHost));
+      &i_kernel_sum[0], d_kernel_sum, kernel_n*sparsening_n*Rcut_n*sizeof(double), cudaMemcpyDeviceToHost));
   checkCudaErrors(cudaFree(d_kernel_sum));
 
   checkCudaErrors(cudaFree(d_g_dzu));
@@ -557,11 +572,15 @@ inline void compute_4pt_contraction(
 
   for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
   {
-    for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
+    for (int isparse = 0; isparse < sparsening_n; isparse++)
     {
-      kernel_sum[ikernel][iRcut] = i_kernel_sum[ikernel*Rcut_n + iRcut];
+      for (int iRcut = 0; iRcut < Rcut_n; iRcut++)
+      {
+        kernel_sum[ikernel][isparse][iRcut] = i_kernel_sum[(ikernel * sparsening_n + isparse) * Rcut_n + iRcut];
+      }
     }
   }
+
 }
 
 #else // !USE_CUDA
@@ -873,7 +892,7 @@ inline void compute_2p2_pieces(
         KQED_LX[ikernel]( ym_mi_xm, xm_minus, kqed_t, kerv4 );
         for( int isparse = 0; isparse < sparsening_n; isparse++)
         {
-          fprintf(stdout, "# [mask_check_in_2p2] mask %d, t %d, x %d, y %d, z %d: mask %d \n", isparse, x_absolute[0] , x_absolute[1] , x_absolute[2] , x_absolute[3] , sparse_masks[isparse][x_absolute[0]][x_absolute[1]][x_absolute[2]][x_absolute[3]]);
+          // fprintf(stdout, "# [mask_check_in_2p2] mask %d, t %d, x %d, y %d, z %d: mask %d \n", isparse, x_absolute[0] , x_absolute[1] , x_absolute[2] , x_absolute[3] , sparse_masks[isparse][x_absolute[0]][x_absolute[1]][x_absolute[2]][x_absolute[3]]);
 
           for( int k = 0; k < 6; k++ )
           {
@@ -1758,8 +1777,7 @@ int main(int argc, char **argv) {
    ** 
    ***********************************************************
    ***********************************************************/
-  fprintf(stdout, "# [hlbl_mII_invert_contract] The VOLUME is %d\n", VOLUME );
-  fflush(stdout);
+
   /***********************************************************
    ** reading the files specifying the sparsening
    *********************************************************** */
@@ -2102,7 +2120,7 @@ int main(int argc, char **argv) {
      ***********************************************************/
     const int ydir = g_source_dirs_list[isrc];
     for ( int iy = ymin; iy <= ymax; iy++ )
-    {
+    {      
       sprintf ( filename, "pi-tensor-mII.y%d.st%dsx%dsy%dsz%d", iy*ydir, 
                 yvec[0], yvec[1], yvec[2], yvec[3] );
 
@@ -2116,6 +2134,7 @@ int main(int argc, char **argv) {
       {
         fprintf(stdout, "[hlbl_mII_invert_contract] Running y point = %d,%d,%d,%d\n",
                 gsy[0], gsy[1], gsy[2], gsy[3]);
+        fflush(stdout);
       }
       
 
@@ -2226,8 +2245,10 @@ int main(int argc, char **argv) {
                   "skipping 2+2 pieces\n");
           break;
         }
-        
+
         int n_yp = g_source_pair_targets_number[ipair];
+        fprintf(stdout, "[hlbl_mII_invert_contract] running 2+2 pieces with n_yp = %d \n", n_yp);
+
         const int * gyp = (const int*) g_source_pair_targets_list[ipair];
         P23x = init_8level_dtable ( n_yp, kernel_n*kernel_n_geom, 2, sparsening_n, Rcut_n, 4, 4, 4 );
         if ( P23x == NULL )
@@ -2242,6 +2263,8 @@ int main(int argc, char **argv) {
         compute_2p2_pieces(
             fwd_y, P1, P23x, gsy, iflavor, io_proc, n_yp, gyp,
             xunit, spinor_work, kqed_t, VOLUME, Nconf, Rcut2_bins, Rcut_n, sparse_masks);
+
+        fprintf(stdout, "[hlbl_mII_invert_contract] completed compute_2p2_pieces, writing to h5 file");
 
         /**********************************************************
          * write P1, P2, P3, ...
@@ -2320,7 +2343,7 @@ int main(int argc, char **argv) {
             fwd_src, fwd_y, dzu, dzsu, g_dzu, g_dzsu, gsx, iflavor, io_proc,
             spinor_work, VOLUME, sparse_masks);
 
-#if 0
+#if 1
         /***********************************************************
          * TEST WRITE dzu
          ***********************************************************/
@@ -2344,7 +2367,7 @@ int main(int argc, char **argv) {
          ***********************************************************/
 #endif
 
-#if 0
+#if 1
         /***********************************************************
          * TEST WRITE dzsu
          ***********************************************************/
@@ -2450,7 +2473,7 @@ int main(int argc, char **argv) {
 
     fini_1level_dtable ( &mbuffer );
 
-#if 1
+#if 0
     /***********************************************************
      * TEST WRITE total kernel_sum
      ***********************************************************/
