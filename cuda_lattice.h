@@ -42,7 +42,7 @@ struct Pair {
 #define CUDA_N_QED_KERNEL 1
 #define CUDA_N_QED_GEOM 5
 #define CUDA_N_RCUT 8
-#define CUDA_N_SPARSENING 7
+#define CUDA_N_SPARSENING 6
 
 void cu_spinor_field_eq_gamma_ti_spinor_field(
     double* out, int mu, const double* in, size_t len);

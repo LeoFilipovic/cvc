@@ -96,7 +96,7 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
 #endif
 #endif
 
-#define sparsening_n 7
+#define sparsening_n 6
 #ifdef CUDA_N_SPARSENING
 #if CUDA_N_SPARSENING != sparsening_n
 #error "Mismatching number of sparsenings between CUDA and CPU"
@@ -1557,10 +1557,10 @@ void read_in_files(char sparsening_filenames[sparsening_n][400], char tmp[sparse
 int main(int argc, char **argv) {
 
   double const mmuon = 105.6583745 /* MeV */  / 197.3269804 /* MeV fm */;
-  double const alat[2] = { 0.07951, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816 cD96 0.05688
+  double const alat[2] = { 0.06816, 0.00013 };  /* fm */ //cB64 0.07951 cC80 0.06816 cD96 0.05688
   unsigned const Rcut_n = 8; // Always check CUDA_N_RCUT in cuda_lattice.h
-  // int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
-  int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
+  int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
+  // int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
   // int const Rcut2_bins[Rcut_n-1] = {1}; //cB64;
 
 
@@ -1628,13 +1628,15 @@ int main(int argc, char **argv) {
 
   /* set the default values */
   if(filename_set==0) strcpy(filename, "p2gg.input");
-  /* fprintf(stdout, "# [hlbl_mII_invert_contract] Reading input from file %s\n", filename); */
+  fprintf(stdout, "# [hlbl_mII_invert_contract] Reading input from file %s\n", filename);
+  fflush(stdout);
   read_input_parser(filename);
+  fflush(stdout);
 
 #ifdef HAVE_TMLQCD_LIBWRAPPER
 
   fprintf(stdout, "# [hlbl_mII_invert_contract] calling tmLQCD wrapper init functions\n");
-
+  fflush(stdout);
   /*********************************
    * initialize MPI parameters for cvc
    *********************************/
@@ -1663,6 +1665,7 @@ int main(int argc, char **argv) {
    ******************************************************/
   if ( g_cart_id == 0 ) {
     fprintf(stdout, "# [hlbl_mII_invert_contract] git version = %s\n", g_gitversion);
+    fflush(stdout);
   }
 
 
@@ -1675,6 +1678,7 @@ int main(int argc, char **argv) {
 #pragma omp parallel
 {
   fprintf(stdout, "# [hlbl_mII_invert_contract] proc%.4d thread%.4d using %d threads\n", g_cart_id, omp_get_thread_num(), omp_get_num_threads());
+  fflush(stdout);
 }
 #else
   if(g_cart_id == 0) fprintf(stdout, "[hlbl_mII_invert_contract] Warning, resetting global thread number to 1\n");
@@ -1777,7 +1781,7 @@ int main(int argc, char **argv) {
    ** 
    ***********************************************************
    ***********************************************************/
-
+  fflush(stdout);
   /***********************************************************
    ** reading the files specifying the sparsening
    *********************************************************** */
@@ -2343,7 +2347,7 @@ int main(int argc, char **argv) {
             fwd_src, fwd_y, dzu, dzsu, g_dzu, g_dzsu, gsx, iflavor, io_proc,
             spinor_work, VOLUME, sparse_masks);
 
-#if 1
+#if 0
         /***********************************************************
          * TEST WRITE dzu
          ***********************************************************/
@@ -2367,7 +2371,7 @@ int main(int argc, char **argv) {
          ***********************************************************/
 #endif
 
-#if 1
+#if 0
         /***********************************************************
          * TEST WRITE dzsu
          ***********************************************************/

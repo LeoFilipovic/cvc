@@ -134,10 +134,16 @@ void spinor_scalar_product_co_mask( complex * const w, double * const xi, double
     ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX + LX_global ) % LX_global,
     ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY + LY_global ) % LY_global,
     ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ + LZ_global ) % LZ_global };
-
-    _co_pl_eq_fv_dag_ti_fv(&p2, xi+iix, phi+iix);
-    p2.re *= sparse_mask[x[0]][x[1]][x[2]][x[3]];
-    p2.im *= sparse_mask[x[0]][x[1]][x[2]][x[3]];
+    int sparse_mask_value = sparse_mask[x[0]][x[1]][x[2]][x[3]];
+    // double p2old_re = p2.re;
+    // double p2old_im = p2.im;
+    // if (sparse_mask_value > 0){
+    //   fprintf(stdout, "# [scalar_products] sparse_mask is non-zero for coords %d %d %d %d \n", x[0], x[1], x[2], x[3]);
+    //   fflush(stdout);
+    // }
+    _co_pl_eq_fv_dag_ti_fv_ti_fv(&p2, xi+iix, phi+iix, sparse_mask_value);
+    // p2.re *= sparse_mask_value;
+    // p2.im *= sparse_mask_value;
   }
 #ifdef HAVE_OPENMP
   omp_set_lock(&writelock);
