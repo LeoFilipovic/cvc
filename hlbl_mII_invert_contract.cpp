@@ -1538,7 +1538,7 @@ void usage() {
   EXIT(0);
 }
 
-void read_in_files(char sparsening_filenames[sparsening_n][400], char tmp[sparsening_n*400], char delimiter) {
+void read_in_files(char** sparsening_filenames, char* tmp, char delimiter) {
   int start = 0;
   int end = 0;
   int sp_f_ind = 0;
@@ -1553,6 +1553,7 @@ void read_in_files(char sparsening_filenames[sparsening_n][400], char tmp[sparse
     }
   }
 }
+
 
 int main(int argc, char **argv) {
 
@@ -1577,7 +1578,11 @@ int main(int argc, char **argv) {
   int ymax = 0;
   int ymin = 0;
   int sparsening_filename_set = 0;
-  char sparsening_filenames[sparsening_n][400] = {{}};
+  // char sparsening_filenames[sparsening_n][400] = {{}};
+  char* sparsening_filenames[sparsening_n];
+  for (int isparse = 0; isparse < sparsening_n; isparse++){
+    sparsening_filenames[isparse] = (char*) malloc(400*sizeof(char));
+  }
   struct timeval ta, tb;
 
 #ifdef HAVE_MPI
@@ -1600,7 +1605,9 @@ int main(int argc, char **argv) {
       ymax = atoi ( optarg );
       break;
     case 's':
-        char tmp[sparsening_n*400];
+        // char tmp[sparsening_n*400];
+        char* tmp;
+        tmp = (char*) malloc(sparsening_n * 400 * sizeof(char));
         strcpy(tmp, optarg);
         fprintf(stdout, "# [hlbl_mII_invert_contract] Have sparse files ");
         fprintf(stdout, tmp);
@@ -1615,6 +1622,7 @@ int main(int argc, char **argv) {
         fprintf(stdout, "  nothing  \n");
         fflush(stdout);
         sparsening_filename_set=1;
+        free(tmp);
         break;
     case 'h':
     case '?':
@@ -1812,6 +1820,7 @@ int main(int argc, char **argv) {
     fprintf(stdout, "# [hlbl_mII_invert_contract] The first 10 points of sparsening file %d are: %d %d %d %d %d %d %d %d %d %d \n",
       sp_ind, tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], tmp[6], tmp[7], tmp[8], tmp[9]);
     delete[] tmp;
+    free(sparsening_filenames[sp_ind]);
   }
 
   const int latdim[4] = {T_global, LX_global, LY_global, LZ_global};
