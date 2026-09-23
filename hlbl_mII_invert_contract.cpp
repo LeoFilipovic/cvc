@@ -41,6 +41,8 @@ extern "C"
 #  include "cuda_lattice.h"
 #endif
 
+#define DO_CONNECTED 0
+
 #define MAIN_PROGRAM
 
 #include "cvc_complex.h"
@@ -1841,6 +1843,7 @@ int main(int argc, char **argv) {
     /***********************************************************
      * local kernel sum
      ***********************************************************/
+#if DO_CONNECTED
     double **** kernel_sum = init_4level_dtable ( kernel_n, 2, ymax + 1, Rcut_n);
     if ( kernel_sum == NULL ) 
     {
@@ -1896,6 +1899,8 @@ int main(int argc, char **argv) {
       }  /* end of loop on spin-color components */
 
     }  /* end of loop on flavor */
+
+#endif // DO_CONNECTED
 
     /***********************************************************/
     /***********************************************************/
@@ -2116,7 +2121,8 @@ int main(int argc, char **argv) {
         fini_7level_dtable( &P23x );
         
       } /* end of P1, P2, P3, ... */
-      
+
+#if DO_CONNECTED      
       for ( int iflavor = 0; iflavor <= 1; iflavor++ ) 
       {
         /***********************************************************
@@ -2246,11 +2252,14 @@ int main(int argc, char **argv) {
         fini_4level_dtable ( &g_dzu  );
         fini_4level_dtable ( &g_dzsu );
 
+
       }  /* end of loop on flavor */
+#endif //DO_CONNECTED
 
     }  /* end of loop on |y| */
 
 
+#if DO_CONNECTED 
 
 #ifdef HAVE_MPI
     /***********************************************************
@@ -2269,7 +2278,7 @@ int main(int argc, char **argv) {
 
     fini_1level_dtable ( &mbuffer );
 
-#if 1
+#if 0
     /***********************************************************
      * TEST WRITE total kernel_sum
      ***********************************************************/
@@ -2315,6 +2324,7 @@ int main(int argc, char **argv) {
     }
       
     fini_4level_dtable ( &kernel_sum );
+#endif // DO_CONNECTED
 
   }  /* end of loop on source locations */
 
