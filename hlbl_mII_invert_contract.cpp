@@ -1878,7 +1878,7 @@ int main(int argc, char **argv) {
   fprintf(stdout, "# [hlbl_mII_invert_contract] Sparsening mask 2 has entry %d at 1 0 0 3.\n", sparse_masks[2][1][0][0][3]);
   fflush(stdout);
 
-#if 1
+#if 0
   for (int sp_ind = 0; sp_ind < sparsening_n; sp_ind++){
     for (int it=0; it < T_global; it++){
       for (int ix=0; ix < LX_global; ix++){
@@ -2391,7 +2391,7 @@ int main(int argc, char **argv) {
             fwd_src, fwd_y, dzu, dzsu, g_dzu, g_dzsu, gsx, iflavor, io_proc,
             spinor_work, VOLUME, sparse_masks);
 
-#if 1
+#if 0
         /***********************************************************
          * TEST WRITE dzu
          ***********************************************************/
@@ -2415,7 +2415,7 @@ int main(int argc, char **argv) {
          ***********************************************************/
 #endif
 
-#if 1
+#if 0
         /***********************************************************
          * TEST WRITE dzsu
          ***********************************************************/
@@ -2464,6 +2464,7 @@ int main(int argc, char **argv) {
             }
           }
         }
+
         fini_3level_dtable( &local_kernel_sum );
 #if _WITH_TIMER
         gettimeofday ( &tb, (struct timezone *)NULL );
@@ -2474,16 +2475,23 @@ int main(int argc, char **argv) {
          * end of contractions for term I and II
          ***********************************************************/
 
-#if 0
+#if 1
         /***********************************************************
          * TEST WRITE local kernel_sum
          ***********************************************************/
-        for (int ikernel = 0; ikernel < kernel_n; ++ikernel) {
-          fprintf(
-              stdout,
-              "# [hlbl_mII_invert_contract] kernel_sum iflavor=%d iy=%d %d: %f\n",
-              iflavor, iy, ikernel,
-              kernel_sum[ikernel][iflavor][iy][0][0]);
+        for (int jker = 0; jker < kernel_n; ++jker) {
+          for (int iflavor = 0; iflavor < 2; ++iflavor)  {
+            for (int iy = 0; iy < ymax+1; ++iy) {
+              for (int isparse = sparsening_n-1; isparse < sparsening_n; ++isparse) {
+                for (int iRcut = 0; iRcut < Rcut_n; ++iRcut) {
+                  fprintf(
+                    stdout,
+                    "# [hlbl_mII_invert_contract] local kernel_sum iflavor=%d iy=%d jker=%d iRcut=%d: %.18g\n",
+                    iflavor, iy, jker, iRcut, kernel_sum[jker][iflavor][iy][isparse][iRcut]);
+                }
+              }
+            }
+          }
         }
         /***********************************************************
          * END OF TEST
@@ -2521,7 +2529,7 @@ int main(int argc, char **argv) {
 
     fini_1level_dtable ( &mbuffer );
 
-#if 0
+#if 1
     /***********************************************************
      * TEST WRITE total kernel_sum
      ***********************************************************/
@@ -2529,7 +2537,7 @@ int main(int argc, char **argv) {
       for (int jker = 0; jker < kernel_n; ++jker) {
         for (int iflavor = 0; iflavor < 2; ++iflavor)  {
           for (int iy = 0; iy < ymax+1; ++iy) {
-            for (int isparse = 0; isparse < sparsening_n; ++isparse) {
+            for (int isparse = sparsening_n-1; isparse < sparsening_n; ++isparse) {
               for (int iRcut = 0; iRcut < Rcut_n; ++iRcut) {
                 fprintf(
                   stdout,
@@ -2556,6 +2564,17 @@ int main(int argc, char **argv) {
       char key[100];
       for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
       {
+        if ( g_cart_id == 0 )
+        {
+          fprintf ( stdout, "[hlbl_mII_invert_contract] Going to write kernel_sum %d\n", ikernel );
+          int isp = sparsening_n - 1;
+          for (int y=0; y < ymax+1; y++) {
+            for (int iR = 0; iR < Rcut_n; iR++) {
+              fprintf ( stdout, "[hlbl_mII_invert_contract] kernel_sum at y=%d, Rcut=%d: %.18g\n", y, iR, kernel_sum[ikernel][0][y][isp][iR] );
+              fflush(stdout);
+            }
+          }
+        }
         sprintf (key, "t%dx%dy%dz%d/%s", gsx[0], gsx[1], gsx[2], gsx[3], KQED_NAME[ikernel] );
 
         exitstatus = write_h5_contraction ( kernel_sum[ikernel][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
