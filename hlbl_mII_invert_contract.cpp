@@ -96,7 +96,7 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
 #endif
 #endif
 
-#define sparsening_n 6
+#define sparsening_n 513
 #ifdef CUDA_N_SPARSENING
 #if CUDA_N_SPARSENING != sparsening_n
 #error "Mismatching number of sparsenings between CUDA and CPU"
@@ -1538,21 +1538,21 @@ void usage() {
   EXIT(0);
 }
 
-void read_in_files(char** sparsening_filenames, char* tmp, char delimiter) {
-  int start = 0;
-  int end = 0;
-  int sp_f_ind = 0;
-  for (int i = 0; i < sparsening_n*400; i++) {
-    if (tmp[i] == delimiter or tmp[i] == ']') {
-      end = i;
-      for (int j = 0; j < end - start; j++) {
-        sparsening_filenames[sp_f_ind][j] = tmp[start + j];
-      }
-      sp_f_ind++;
-      start = end+1;
-    }
-  }
-}
+// void read_in_files(char** sparsening_filenames, char* tmp, char delimiter) {
+//   int start = 0;
+//   int end = 0;
+//   int sp_f_ind = 0;
+//   for (int i = 0; i < sparsening_n*400; i++) {
+//     if (tmp[i] == delimiter or tmp[i] == ']') {
+//       end = i;
+//       for (int j = 0; j < end - start; j++) {
+//         sparsening_filenames[sp_f_ind][j] = tmp[start + j];
+//       }
+//       sp_f_ind++;
+//       start = end+1;
+//     }
+//   }
+// }
 
 
 int main(int argc, char **argv) {
@@ -1562,7 +1562,7 @@ int main(int argc, char **argv) {
   unsigned const Rcut_n = 2; // Always check CUDA_N_RCUT in cuda_lattice.h
   // int const Rcut2_bins[Rcut_n-1] = {8*8, 11*11, 16*16, 19*19, 23*23, 27*27, 31*31}; //cC80 
   // int const Rcut2_bins[Rcut_n-1] = {7*7, 9*9, 14*14, 16*16, 20*20, 23*23, 27*27}; //cB64;
-  int const Rcut2_bins[Rcut_n-1] = {1}; //test;
+  int const Rcut2_bins[Rcut_n-1] = {2}; //test;
 
 
   int c;
@@ -1589,7 +1589,7 @@ int main(int argc, char **argv) {
   MPI_Init(&argc, &argv);
 #endif
 
-  while ((c = getopt(argc, argv, "ch?f:y:z:s:")) != -1) {
+  while ((c = getopt(argc, argv, "ch?f:y:z:")) != -1) {
     switch (c) {
     case 'f':
       strcpy(filename, optarg);
@@ -1604,26 +1604,26 @@ int main(int argc, char **argv) {
     case 'z':
       ymax = atoi ( optarg );
       break;
-    case 's':
-        // char tmp[sparsening_n*400];
-        char* tmp;
-        tmp = (char*) malloc(sparsening_n * 400 * sizeof(char));
-        strcpy(tmp, optarg);
-        fprintf(stdout, "# [hlbl_mII_invert_contract] Have sparse files ");
-        fprintf(stdout, tmp);
-        fprintf(stdout, "\n");
-        fflush(stdout);
-        read_in_files(sparsening_filenames, tmp, ',');
-        fprintf(stdout, "# [hlbl_mII_invert_contract] The sparse files will be read as: ");
-        for(int sp_ind = 0; sp_ind < sparsening_n; sp_ind++){
-          fprintf(stdout, sparsening_filenames[sp_ind]);
-          fprintf(stdout, "  then  ");
-        }
-        fprintf(stdout, "  nothing  \n");
-        fflush(stdout);
-        sparsening_filename_set=1;
-        free(tmp);
-        break;
+    // case 's':
+    //     // char tmp[sparsening_n*400];
+    //     char* tmp;
+    //     tmp = (char*) malloc(sparsening_n * 400 * sizeof(char));
+    //     strcpy(tmp, optarg);
+    //     fprintf(stdout, "# [hlbl_mII_invert_contract] Have sparse files ");
+    //     fprintf(stdout, tmp);
+    //     fprintf(stdout, "\n");
+    //     fflush(stdout);
+    //     read_in_files(sparsening_filenames, tmp, ',');
+    //     fprintf(stdout, "# [hlbl_mII_invert_contract] The sparse files will be read as: ");
+    //     for(int sp_ind = 0; sp_ind < sparsening_n; sp_ind++){
+    //       fprintf(stdout, sparsening_filenames[sp_ind]);
+    //       fprintf(stdout, "  then  ");
+    //     }
+    //     fprintf(stdout, "  nothing  \n");
+    //     fflush(stdout);
+    //     sparsening_filename_set=1;
+    //     free(tmp);
+    //     break;
     case 'h':
     case '?':
     default:
@@ -1797,31 +1797,60 @@ int main(int argc, char **argv) {
       gettimeofday ( &ta, (struct timezone *)NULL );
 #endif
   void *sparsenings[sparsening_n];
+  int const size = 1;
   int size_of_sparsenings[sparsening_n] = {0};
-
-  for (int sp_ind = 0; sp_ind < sparsening_n; sp_ind++) {
-    fprintf(stdout, "# [hlbl_mII_invert_contract] reading file %d %s for the coordinates of the sparsened integration.\n", sp_ind, sparsening_filenames[sp_ind]);
-    fflush(stdout);
-    std::ifstream inputFile(sparsening_filenames[sp_ind], std::ios::binary);
-    if (!inputFile) {
-      fprintf(stderr, "[hlbl_mII_invert_contract] Error from reading sparsening file %s in %s %d\n", sparsening_filenames[sp_ind], __FILE__, __LINE__);
-      EXIT(7);
-    }
-    int size;
-    inputFile.read((char*)(&size), sizeof(size));
+  for (int sp_ind = 0; sp_ind < sparsening_n-1; sp_ind++){
     size_of_sparsenings[sp_ind] = size;
-    fprintf(stdout, "# [hlbl_mII_invert_contract] The size of sparsening file %d is %d \n" , sp_ind, size);
+  }
+  size_of_sparsenings[sparsening_n-1] = 512;
+  for (int sp_ind = 0; sp_ind < sparsening_n-1; sp_ind++) {
     int* tmp = new int[size];
-    inputFile.read((char*)tmp, sizeof(int) * size);
-
+    tmp[0] = sp_ind;
     sparsenings[sp_ind] = malloc(sizeof(int)*size);
     memcpy(sparsenings[sp_ind], tmp, size*sizeof(int));
-    inputFile.close();
-    fprintf(stdout, "# [hlbl_mII_invert_contract] The first 10 points of sparsening file %d are: %d %d %d %d %d %d %d %d %d %d \n",
-      sp_ind, tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], tmp[6], tmp[7], tmp[8], tmp[9]);
     delete[] tmp;
-    free(sparsening_filenames[sp_ind]);
   }
+  fprintf(stdout, "# [hlbl_mII_invert_contract] Sparsening list initialization successful for idvpts lists.\n");
+  fflush(stdout);
+
+  int sp_ind = 512;
+  int* tmp = new int[512];
+  for (int ind = 0; ind < 512; ind++){
+    tmp[ind] = ind;
+  }
+  sparsenings[sp_ind] = malloc(sizeof(int)*512);
+  memcpy(sparsenings[sp_ind], tmp, 512*sizeof(int));
+  delete[] tmp;
+  fprintf(stdout, "# [hlbl_mII_invert_contract] Sparsening list initialization successful for all lists.\n");
+
+  fflush(stdout);
+  fprintf(stdout, "# [hlbl_mII_invert_contract] The sizes of the sparsening lists are %d %d %d %d.\n", size_of_sparsenings[0], size_of_sparsenings[15], size_of_sparsenings[211], size_of_sparsenings[512]);
+  fprintf(stdout, "# [hlbl_mII_invert_contract] The sparsening lists have entries %d %d %d %d.\n", ( (int *) sparsenings[0] ) [0], ( (int *) sparsenings[12] ) [0], ( (int *) sparsenings[512] ) [0], ( (int *) sparsenings[512] ) [15]);
+  
+  fflush(stdout);
+  // for (int sp_ind = 0; sp_ind < sparsening_n; sp_ind++) {
+  //   fprintf(stdout, "# [hlbl_mII_invert_contract] reading file %d %s for the coordinates of the sparsened integration.\n", sp_ind, sparsening_filenames[sp_ind]);
+  //   fflush(stdout);
+  //   std::ifstream inputFile(sparsening_filenames[sp_ind], std::ios::binary);
+  //   if (!inputFile) {
+  //     fprintf(stderr, "[hlbl_mII_invert_contract] Error from reading sparsening file %s in %s %d\n", sparsening_filenames[sp_ind], __FILE__, __LINE__);
+  //     EXIT(7);
+  //   }
+  //   int size;
+  //   inputFile.read((char*)(&size), sizeof(size));
+  //   size_of_sparsenings[sp_ind] = size;
+  //   fprintf(stdout, "# [hlbl_mII_invert_contract] The size of sparsening file %d is %d \n" , sp_ind, size);
+  //   int* tmp = new int[size];
+  //   inputFile.read((char*)tmp, sizeof(int) * size);
+
+  //   sparsenings[sp_ind] = malloc(sizeof(int)*size);
+  //   memcpy(sparsenings[sp_ind], tmp, size*sizeof(int));
+  //   inputFile.close();
+  //   fprintf(stdout, "# [hlbl_mII_invert_contract] The first 10 points of sparsening file %d are: %d %d %d %d %d %d %d %d %d %d \n",
+  //     sp_ind, tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], tmp[6], tmp[7], tmp[8], tmp[9]);
+  //   delete[] tmp;
+  //   free(sparsening_filenames[sp_ind]);
+  // }
 
   const int latdim[4] = {T_global, LX_global, LY_global, LZ_global};
   int V = latdim[0] * latdim[1] * latdim[2] * latdim[3];
@@ -1831,19 +1860,25 @@ int main(int argc, char **argv) {
     for (int point_ind = 0; point_ind < size_of_sparsenings[sp_ind]; point_ind++){
       int coords[4];
       int x_num = ( (int *) sparsenings[sp_ind] ) [point_ind];
+      fprintf(stdout, "# [hlbl_mII_invert_contract] Found x_num %d at sp_ind %d point_ind %d.\n", x_num, sp_ind, point_ind);
       int modulator = V;
       for (int c_ind = 0; c_ind < 4; c_ind++) {
         modulator /= latdim[c_ind];
         coords[c_ind] = x_num / modulator;
         x_num -= modulator * coords[c_ind];
       }
+      fprintf(stdout, "# [hlbl_mII_invert_contract] Adding to mask %d t %d x %d y %d z %d.\n", sp_ind, coords[0], coords[1], coords[2], coords[3]);
+      fflush(stdout);
       sparse_masks[sp_ind][coords[0]][coords[1]][coords[2]][coords[3]] += 1;
     }
   }
 
   fprintf(stdout, "# [hlbl_mII_invert_contract] Sparsening mask initialization successful.\n");
+  fprintf(stdout, "# [hlbl_mII_invert_contract] Sparsening mask 2 has entry %d at 0 0 0 2.\n", sparse_masks[2][0][0][0][2]);
+  fprintf(stdout, "# [hlbl_mII_invert_contract] Sparsening mask 2 has entry %d at 1 0 0 3.\n", sparse_masks[2][1][0][0][3]);
+  fflush(stdout);
 
-#if 0
+#if 1
   for (int sp_ind = 0; sp_ind < sparsening_n; sp_ind++){
     for (int it=0; it < T_global; it++){
       for (int ix=0; ix < LX_global; ix++){
@@ -2356,7 +2391,7 @@ int main(int argc, char **argv) {
             fwd_src, fwd_y, dzu, dzsu, g_dzu, g_dzsu, gsx, iflavor, io_proc,
             spinor_work, VOLUME, sparse_masks);
 
-#if 0
+#if 1
         /***********************************************************
          * TEST WRITE dzu
          ***********************************************************/
@@ -2380,7 +2415,7 @@ int main(int argc, char **argv) {
          ***********************************************************/
 #endif
 
-#if 0
+#if 1
         /***********************************************************
          * TEST WRITE dzsu
          ***********************************************************/
