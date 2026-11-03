@@ -82,7 +82,7 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
  * choice of KQED kernels
  * NOTE: Must be consistently updated between here and CUDA.
  ***********************************************************/
-#define kernel_n 3
+#define kernel_n 1
 #ifdef CUDA_N_QED_KERNEL
 #if CUDA_N_QED_KERNEL != kernel_n
 #error "Mismatching number of QED kernels between CUDA and CPU"
@@ -102,12 +102,10 @@ void QED_kernel_L0P4( const double xv[4], const double yv[4], const struct QED_k
 }
 
 QED_kernel_LX_ptr KQED_LX[kernel_n] = {
-  QED_kernel_L0,
-  QED_kernel_L3,
   QED_kernel_L0P4,
 };
 const char * KQED_NAME[kernel_n] = {
-  "L0", "L3", "LLambda0.4"
+  "LLambda0.4"
 };
 const char * KQED_GEOM_NAME[kernel_n_geom] = {
   "P2_0", "P2_1", "P3", "P4_0", "P4_1"

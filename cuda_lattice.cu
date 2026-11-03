@@ -245,14 +245,11 @@ __device__
 void KQED_LX(
     int ikernel, const double xm[4], const double ym[4],
     const struct QED_kernel_temps kqed_t, double kerv[6][4][4][4]) {
-#if CUDA_N_QED_KERNEL != 3
+#if CUDA_N_QED_KERNEL != 1
   #error "Number of QED kernels does not match implementation"
 #endif
   if (ikernel == 0) {
-    QED_kernel_L0( xm, ym, kqed_t, kerv );
-  }
-  else if (ikernel == 1) {
-    QED_kernel_L3( xm, ym, kqed_t, kerv );
+    QED_Mkernel_L2( 0.4, xm, ym, kqed_t, kerv );;
   }
   else {
     QED_Mkernel_L2( 0.4, xm, ym, kqed_t, kerv );
