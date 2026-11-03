@@ -96,7 +96,7 @@ typedef void (*QED_kernel_LX_ptr)( const double xv[4], const double yv[4], const
 #endif
 #endif
 
-#define sparsening_n 513
+#define sparsening_n 512
 #ifdef CUDA_N_SPARSENING
 #if CUDA_N_SPARSENING != sparsening_n
 #error "Mismatching number of sparsenings between CUDA and CPU"
@@ -1813,7 +1813,7 @@ int main(int argc, char **argv) {
   fprintf(stdout, "# [hlbl_mII_invert_contract] Sparsening list initialization successful for idvpts lists.\n");
   fflush(stdout);
 
-  int sp_ind = 512;
+  int sp_ind = sparsening_n-1;
   int* tmp = new int[512];
   for (int ind = 0; ind < 512; ind++){
     tmp[ind] = ind;
@@ -1824,8 +1824,8 @@ int main(int argc, char **argv) {
   fprintf(stdout, "# [hlbl_mII_invert_contract] Sparsening list initialization successful for all lists.\n");
 
   fflush(stdout);
-  fprintf(stdout, "# [hlbl_mII_invert_contract] The sizes of the sparsening lists are %d %d %d %d.\n", size_of_sparsenings[0], size_of_sparsenings[15], size_of_sparsenings[211], size_of_sparsenings[512]);
-  fprintf(stdout, "# [hlbl_mII_invert_contract] The sparsening lists have entries %d %d %d %d.\n", ( (int *) sparsenings[0] ) [0], ( (int *) sparsenings[12] ) [0], ( (int *) sparsenings[512] ) [0], ( (int *) sparsenings[512] ) [15]);
+  fprintf(stdout, "# [hlbl_mII_invert_contract] The sizes of the sparsening lists are %d %d %d %d.\n", size_of_sparsenings[0], size_of_sparsenings[1], size_of_sparsenings[sparsening_n/2], size_of_sparsenings[sparsening_n-1]);
+  fprintf(stdout, "# [hlbl_mII_invert_contract] The sparsening lists have entries %d %d %d %d.\n", ( (int *) sparsenings[0] ) [0], ( (int *) sparsenings[1] ) [0], ( (int *) sparsenings[sparsening_n-1] ) [0], ( (int *) sparsenings[sparsening_n-1] ) [15]);
   
   fflush(stdout);
   // for (int sp_ind = 0; sp_ind < sparsening_n; sp_ind++) {
