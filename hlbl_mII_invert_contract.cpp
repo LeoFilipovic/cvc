@@ -524,6 +524,51 @@ inline void compute_4pt_contraction(
   checkCudaErrors(cudaFree(d_g_dzsu));
 }
 
+inline void compute_4pt_wrap(
+    const prop_t fwd_src, const prop_t fwd_y,
+    double **** const g_dzu, double **** const g_dzsu,
+    const int* gsx, int iflavor, const double xunit[2], const int yv[4],
+    double kernel_sum[kernel_n], QED_kernel_temps kqed_t, unsigned VOLUME) {
+  constexpr size_t n_g_dzu = 6 * 4 * 12 * 24;
+  constexpr size_t n_g_dzsu = 4 * 4 * 12 * 24;
+  size_t sizeof_g_dzu = n_g_dzu * sizeof(double);
+  size_t sizeof_g_dzsu = n_g_dzsu * sizeof(double);
+  double* d_g_dzu = NULL;
+  double* d_g_dzsu = NULL;
+  checkCudaErrors(cudaMalloc((void**)&d_g_dzu, sizeof_g_dzu));
+  checkCudaErrors(cudaMalloc((void**)&d_g_dzsu, sizeof_g_dzsu));
+  checkCudaErrors(cudaMemcpy(
+      d_g_dzu, &g_dzu[0][0][0][0], sizeof_g_dzu, cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaMemcpy(
+      d_g_dzsu, &g_dzsu[0][0][0][0], sizeof_g_dzsu, cudaMemcpyHostToDevice));
+  double* d_kernel_sum = NULL;
+  checkCudaErrors(cudaMalloc((void**)&d_kernel_sum, kernel_n*sizeof(double)));
+  checkCudaErrors(cudaMemset(d_kernel_sum, 0, kernel_n*sizeof(double)));
+  
+  Coord d_proc_coords {
+    .t = g_proc_coords[0],
+    .x = g_proc_coords[1],
+    .y = g_proc_coords[2],
+    .z = g_proc_coords[3]
+  };
+  Geom local_geom { .T = T, .LX = LX, .LY = LY, .LZ = LZ };
+  Geom global_geom { .T = T_global, .LX = LX_global, .LY = LY_global, .LZ = LZ_global };
+  Coord d_gsx = { .t = gsx[0], .x = gsx[1], .y = gsx[2], .z = gsx[3] };
+  Coord d_yv = { .t = yv[0], .x = yv[1], .y = yv[2], .z = yv[3] };
+  Pair d_xunit = { .a = xunit[0], .b = xunit[1] };
+
+  cu_4pt_contraction(
+      d_kernel_sum, d_g_dzu, d_g_dzsu, fwd_src, fwd_y, iflavor, d_proc_coords,
+      d_gsx, d_xunit, d_yv, kqed_t, global_geom, local_geom);
+
+  checkCudaErrors(cudaMemcpy(
+      &kernel_sum[0], d_kernel_sum, kernel_n*sizeof(double), cudaMemcpyDeviceToHost));
+  checkCudaErrors(cudaFree(d_kernel_sum));
+
+  checkCudaErrors(cudaFree(d_g_dzu));
+  checkCudaErrors(cudaFree(d_g_dzsu));
+}
+
 #else // !USE_CUDA
 
 /***********************************************************
@@ -1353,6 +1398,361 @@ inline void compute_4pt_contraction(
 #endif
 }
 
+
+
+inline void compute_4pt_wrap(
+    const prop_t fwd_src, const prop_t fwd_y,
+    double **** const g_dzu, double **** const g_dzsu,
+    const int* gsx, int iflavor, const double xunit[2], const int yv[4],
+    double kernel_sum[kernel_n], QED_kernel_temps kqed_t, unsigned VOLUME) {
+
+#ifdef HAVE_OPENMP
+#pragma omp parallel
+{
+#endif
+  double kernel_sum_thread[kernel_n] = { 0 };
+
+  double **** corr_I  = init_4level_dtable ( 6, 4, 4, 8 );
+  double **** corr_II = init_4level_dtable ( 6, 4, 4, 8 );
+  double ***  dxu     = init_3level_dtable ( 4, 12, 24 );
+  double **** g_dxu   = init_4level_dtable ( 4, 4, 12, 24 );
+
+  if ( corr_I == NULL || corr_II == NULL || dxu == NULL || g_dxu == NULL )
+  {
+    fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
+    EXIT(12);
+  }
+
+  double spinor1[24];
+
+  double kerv1[6][4][4][4] KQED_ALIGN ;
+  double kerv2[6][4][4][4] KQED_ALIGN ;
+  double kerv3[6][4][4][4] KQED_ALIGN ;
+  
+
+  /***********************************************************
+   ***********************************************************
+   **
+   ** loop on volume
+   **
+   ***********************************************************
+   ***********************************************************/
+
+#ifdef HAVE_OPENMP
+#pragma omp for
+#endif
+  for ( unsigned int ix = 0; ix < VOLUME; ix++ )
+  {
+    int x[4] = { g_proc_coords[0]*T  + g_lexic2coords[ix][0],
+                 g_proc_coords[1]*LX + g_lexic2coords[ix][1],
+                 g_proc_coords[2]*LY + g_lexic2coords[ix][2],
+                 g_proc_coords[3]*LZ + g_lexic2coords[ix][3] };
+
+    x[0] = ( x[0] - gsx[0] + T_global  ) % T_global;
+    x[1] = ( x[1] - gsx[1] + LX_global ) % LX_global;
+    x[2] = ( x[2] - gsx[2] + LY_global ) % LY_global;
+    x[3] = ( x[3] - gsx[3] + LZ_global ) % LZ_global;
+
+    int xv[4], xvzh[4];
+    site_map ( xv, x );
+    site_map_zerohalf ( xvzh, x );
+
+    // double local_g_fwd_src[4 * 12 * 12 * 2];
+    // for ( int mu = 0; mu < 4; mu++ )
+    // {
+    //   for ( int ia = 0; ia < 12; ia++ )
+    //   {
+    //     double * const _d = fwd_src[1-iflavor][ia] + _GSI(ix);
+    //     double * const _t = &local_g_fwd_src[(mu * 12 + ia) * 12 * 2];
+    //     _fv_eq_gamma_ti_fv ( _t, mu, _d );
+    //     _fv_ti_eq_g5 ( _t );
+    //   }
+    // }
+
+    for ( int ib = 0; ib < 12; ib++)
+    {
+      double * const _u = fwd_y[iflavor][ib] + _GSI(ix);
+
+      for ( int mu = 0; mu < 4; mu++ )
+      {
+
+        for ( int ia = 0; ia < 12; ia++)
+        {
+          double * const _d = fwd_src[1-iflavor][ia] + _GSI(ix);
+          double * const _t = spinor1;
+          _fv_eq_gamma_ti_fv ( _t, mu, _d );
+          _fv_ti_eq_g5 ( _t );
+          // double * const _t = &local_g_fwd_src[(mu * 12 + ia) * 12 * 2];
+
+          // double * const _d = g_fwd_src_2[1-iflavor][mu][ia] + _GSI(ix);
+          complex w;
+
+          _co_eq_fv_dag_ti_fv ( &w, _t, _u );
+
+          /* -1 factor due to (g5 gmu)^+ = -g5 gmu */
+          dxu[mu][ib][2*ia  ] = -w.re;
+          dxu[mu][ib][2*ia+1] = -w.im;
+        }
+      } /* end of loop on gamma_mu */
+    }
+
+
+    for ( int mu = 0; mu < 4; mu++ )
+    {
+      for ( int ib = 0; ib < 12; ib++)
+      {
+        _fv_eq_gamma_ti_fv ( spinor1, 5, dxu[mu][ib] );
+        for ( int lambda = 0; lambda < 4; lambda++ )
+        {
+          _fv_eq_gamma_ti_fv ( g_dxu[lambda][mu][ib], lambda, spinor1 );
+        }
+      }
+    }
+
+    /***********************************************************
+     * combine g_dxu and g_dzu
+     ***********************************************************/
+    for ( int mu = 0; mu < 4; mu++ )
+    {
+      for ( int nu = 0; nu < 4; nu++ )
+      {
+        for ( int lambda = 0; lambda < 4; lambda++ )
+        {
+          for( int k = 0; k < 6; k++ )
+          {
+
+            double dtmp[2] = {0., 0.};
+            for ( int ia = 0; ia < 12; ia++)
+            {
+              for ( int ib = 0; ib < 12; ib++)
+              {
+
+                double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
+
+                double v[2] = { g_dzu[k][nu][ib][2*ia], g_dzu[k][nu][ib][2*ia+1] };
+
+                dtmp[0] += u[0] * v[0] - u[1] * v[1];
+                dtmp[1] += u[0] * v[1] + u[1] * v[0];
+              }
+            }
+            corr_I[k][mu][nu][2*lambda  ] = -dtmp[0];
+            corr_I[k][mu][nu][2*lambda+1] = -dtmp[1];
+          }
+        }
+      }
+    }
+
+    /***********************************************************/
+    /***********************************************************/
+
+    /***********************************************************
+     * combine g_dxu and g_dzsu
+     ***********************************************************/
+    for ( int mu = 0; mu < 4; mu++ )
+    {
+      for ( int nu = 0; nu < 4; nu++ )
+      {
+        for ( int lambda = 0; lambda < 4; lambda++ )
+        {
+          for( int k = 0; k < 6; k++ )
+          {
+            int const sigma = idx_comb[k][1];
+            int const rho   = idx_comb[k][0];
+
+            double dtmp[2] = {0., 0.};
+            for ( int ia = 0; ia < 12; ia++)
+            {
+              for ( int ib = 0; ib < 12; ib++)
+              {
+
+                double u[2] = { g_dxu[lambda][mu][ia][2*ib], g_dxu[lambda][mu][ia][2*ib+1] };
+
+                double v[2] = { xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia  ] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia  ],
+                                xvzh[rho] * g_dzsu[sigma][nu][ib][2*ia+1] - xvzh[sigma] * g_dzsu[rho][nu][ib][2*ia+1] };
+
+                dtmp[0] += u[0] * v[0] - u[1] * v[1];
+                dtmp[1] += u[0] * v[1] + u[1] * v[0];
+              }
+            }
+            corr_II[k][mu][nu][2*lambda  ] = -dtmp[0];
+            corr_II[k][mu][nu][2*lambda+1] = -dtmp[1];
+          }
+        }
+      }
+    }
+
+    /***********************************************************/
+    /***********************************************************/
+
+    /***********************************************************
+     * summation with QED kernel
+     ***********************************************************/
+    double const xm[4] = {
+      xv[0] * xunit[0],
+      xv[1] * xunit[0],
+      xv[2] * xunit[0],
+      xv[3] * xunit[0] };
+
+    double const ym[4] = {
+      yv[0] * xunit[0],
+      yv[1] * xunit[0],
+      yv[2] * xunit[0],
+      yv[3] * xunit[0] };
+
+
+    // double * const _kerv1   = (double * const )kerv1;
+    // double * const _kerv2   = (double * const )kerv2;
+    // double * const _kerv3   = (double * const )kerv3;
+
+    double * const _corr_I  = corr_I[0][0][0];
+    double * const _corr_II = corr_II[0][0][0];
+
+    double const xm_mi_ym[4] = {
+      xm[0] - ym[0],
+      xm[1] - ym[1],
+      xm[2] - ym[2],
+      xm[3] - ym[3] };
+
+    /***********************************************************
+     * loop on kernsl
+     ***********************************************************/
+    for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
+    {
+
+      KQED_LX[ikernel]( xm, ym,       kqed_t, kerv1 );
+      KQED_LX[ikernel]( ym, xm,       kqed_t, kerv2 );
+      KQED_LX[ikernel]( xm, xm_mi_ym, kqed_t, kerv3 );
+      double dtmp = 0.;
+      int i = 0;
+      for( int k = 0; k < 6; k++ )
+      {
+        for ( int mu = 0; mu < 4; mu++ )
+        {
+          for ( int nu = 0; nu < 4; nu++ )
+          {
+            for ( int lambda = 0; lambda < 4; lambda++ )
+            {
+              dtmp += ( kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu] ) * _corr_I[2*i]
+                  + kerv3[k][lambda][nu][mu] * _corr_II[2*i];
+
+              i++;
+            }
+          }
+        }
+      }
+
+      kernel_sum_thread[ikernel] += dtmp;
+
+      /***********************************************************
+       * BEGIN TEST
+       ***********************************************************/
+#if 0
+#pragma omp critical
+      {
+        unsigned int rank = ( ( x[0] * LX_global + x[1] ) * LY_global + x[2] ) * LZ_global + x[3];
+
+        for ( int mu = 0; mu < 4; mu++ )
+        {
+          for ( int nu = 0; nu < 4; nu++ )
+          {
+            for ( int lambda = 0; lambda < 4; lambda++ )
+            {
+              for( int k = 0; k < 6; k++ )
+              {
+                fprintf ( stdout, "r %6d xv %3d %3d %3d %3d yv %3d %3d %3d %3d  fl %d L %d  idx %d %d %d %d %d K %16.7e %16.7e %16.7e   P1 %25.16e   P2 %25.16e \n",
+                          rank,
+                          xv[0], xv[1], xv[2], xv[3],
+                          yv[0], yv[1], yv[2], yv[3],
+                          iflavor,
+                          ikernel,
+                          mu, nu, lambda, idx_comb[k][0], idx_comb[k][1],
+                          kerv1[k][mu][nu][lambda],
+                          kerv2[k][mu][nu][lambda],
+                          kerv3[k][mu][nu][lambda],
+                          corr_I[k][mu][nu][2*lambda],
+                          corr_II[k][mu][nu][2*lambda] );
+              }
+            }
+          }
+        }
+      }  /* end of critical region */
+#endif
+      /***********************************************************
+       * END TEST
+       ***********************************************************/
+
+    }  /* end of loop on kernels */
+
+#if 0
+    /***********************************************************
+     * BEGIN TEST
+     ***********************************************************/
+#pragma omp critical
+    {
+      unsigned int rank = ( ( x[0] * LX_global + x[1] ) * LY_global + x[2] ) * LZ_global + x[3];
+
+      for ( int mu = 0; mu < 4; mu++ )
+      {
+        for ( int nu = 0; nu < 4; nu++ )
+        {
+          for ( int lambda = 0; lambda < 4; lambda++ )
+          {
+            for( int k = 0; k < 6; k++ )
+            {
+              fprintf ( stdout, "y %2d s %d %d %d %d fl %d  x %6u  i %3d %3d %3d %3d %3d   %25.16e %25.16e \n",
+                        iy,
+                        ysign_comb[isign][0],
+                        ysign_comb[isign][1],
+                        ysign_comb[isign][2],
+                        ysign_comb[isign][3],
+                        iflavor,
+                        rank,
+                        mu, nu, lambda, idx_comb[k][0], idx_comb[k][1],
+                        corr_I[k][mu][nu][2*lambda  ], corr_I[k][mu][nu][2*lambda+1] );
+            }
+          }
+        }
+      }
+    }  /* end of critical region */
+
+    /***********************************************************
+     * END TEST
+     ***********************************************************/
+#endif
+  }  /* end of loop on ix */
+
+  /***********************************************************
+   * summation with QED kernel
+   ***********************************************************/
+#ifdef HAVE_OPENMP
+#pragma omp critical
+{
+#endif
+
+  for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
+  {
+    kernel_sum[ikernel] += kernel_sum_thread[ikernel];
+  }
+
+#ifdef HAVE_OPENMP
+   /***********************************************************/
+}  /* end of critical region */
+   /***********************************************************/
+#endif
+
+
+  fini_4level_dtable ( &corr_I  );
+  fini_4level_dtable ( &corr_II );
+  fini_4level_dtable ( &g_dxu   );
+  fini_3level_dtable ( &dxu     );
+
+#ifdef HAVE_OPENMP
+   /***********************************************************/
+}  /* end of parallel region */
+   /***********************************************************/
+#endif
+}
+
 #endif // USE_CUDA
 
 /***********************************************************/
@@ -1740,6 +2140,7 @@ int main(int argc, char **argv) {
      * local kernel sum
      ***********************************************************/
     double *** kernel_sum = init_3level_dtable ( kernel_n, 2, ymax + 1 );
+    double *** kernel_sum_wrap = init_3level_dtable ( kernel_n, 2, ymax + 1 );
     if ( kernel_sum == NULL ) 
     {
       fprintf(stderr, "[hlbl_mII_invert_contract] Error from kqed initialise, status was %d %s %d\n", exitstatus, __FILE__, __LINE__);
@@ -2108,6 +2509,15 @@ int main(int argc, char **argv) {
           kernel_sum[ikernel][iflavor][iy] = local_kernel_sum[ikernel];
         }
 
+        double local_kernel_sum_wrap[kernel_n] = { 0 };
+        compute_4pt_wrap(
+            fwd_src, fwd_y, g_dzu, g_dzsu, gsx, iflavor, xunit, yv,
+            local_kernel_sum_wrap, kqed_t, VOLUME);
+        for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
+        {
+          kernel_sum_wrap[ikernel][iflavor][iy] = local_kernel_sum_wrap[ikernel];
+        }
+
 #if _WITH_TIMER
         gettimeofday ( &tb, (struct timezone *)NULL );
         show_time ( &ta, &tb, "hlbl_mII_invert_contract", "kernel-sum", io_proc == 2 );
@@ -2162,6 +2572,14 @@ int main(int argc, char **argv) {
       EXIT(12);
     }
 
+    memcpy ( mbuffer, kernel_sum_wrap[0][0], nitem * sizeof ( double ) );
+
+    if ( MPI_Reduce ( mbuffer, kernel_sum_wrap[0][0], nitem, MPI_DOUBLE, MPI_SUM, 0, g_cart_grid ) != MPI_SUCCESS )
+    {
+      fprintf (stderr, "[hlbl_mII_invert_contract] Error from MP_Reduce  %s %d\n", __FILE__, __LINE__ );
+      EXIT(12);
+    }
+
     fini_1level_dtable ( &mbuffer );
 
 #if 0
@@ -2203,10 +2621,19 @@ int main(int argc, char **argv) {
           fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
           EXIT(12);
         }
+
+        sprintf (key, "t%dx%dy%dz%d_wrap/%s", gsx[0], gsx[1], gsx[2], gsx[3], KQED_NAME[ikernel] );
+        exitstatus = write_h5_contraction ( kernel_sum_wrap[ikernel][0], NULL, output_filename, key, "double", ncdim, cdim );
+        if ( exitstatus != 0 )
+        {
+          fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
+          EXIT(12);
+        }
       }
     }
       
     fini_3level_dtable ( &kernel_sum );
+    fini_3level_dtable ( &kernel_sum_wrap );
 
   }  /* end of loop on source locations */
 
