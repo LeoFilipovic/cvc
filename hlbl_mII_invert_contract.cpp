@@ -1457,18 +1457,6 @@ inline void compute_4pt_wrap(
     site_map ( xv, x );
     site_map_zerohalf ( xvzh, x );
 
-    // double local_g_fwd_src[4 * 12 * 12 * 2];
-    // for ( int mu = 0; mu < 4; mu++ )
-    // {
-    //   for ( int ia = 0; ia < 12; ia++ )
-    //   {
-    //     double * const _d = fwd_src[1-iflavor][ia] + _GSI(ix);
-    //     double * const _t = &local_g_fwd_src[(mu * 12 + ia) * 12 * 2];
-    //     _fv_eq_gamma_ti_fv ( _t, mu, _d );
-    //     _fv_ti_eq_g5 ( _t );
-    //   }
-    // }
-
     for ( int ib = 0; ib < 12; ib++)
     {
       double * const _u = fwd_y[iflavor][ib] + _GSI(ix);
@@ -1643,82 +1631,8 @@ inline void compute_4pt_wrap(
 
       kernel_sum_thread[ikernel] += dtmp;
 
-      /***********************************************************
-       * BEGIN TEST
-       ***********************************************************/
-#if 0
-#pragma omp critical
-      {
-        unsigned int rank = ( ( x[0] * LX_global + x[1] ) * LY_global + x[2] ) * LZ_global + x[3];
-
-        for ( int mu = 0; mu < 4; mu++ )
-        {
-          for ( int nu = 0; nu < 4; nu++ )
-          {
-            for ( int lambda = 0; lambda < 4; lambda++ )
-            {
-              for( int k = 0; k < 6; k++ )
-              {
-                fprintf ( stdout, "r %6d xv %3d %3d %3d %3d yv %3d %3d %3d %3d  fl %d L %d  idx %d %d %d %d %d K %16.7e %16.7e %16.7e   P1 %25.16e   P2 %25.16e \n",
-                          rank,
-                          xv[0], xv[1], xv[2], xv[3],
-                          yv[0], yv[1], yv[2], yv[3],
-                          iflavor,
-                          ikernel,
-                          mu, nu, lambda, idx_comb[k][0], idx_comb[k][1],
-                          kerv1[k][mu][nu][lambda],
-                          kerv2[k][mu][nu][lambda],
-                          kerv3[k][mu][nu][lambda],
-                          corr_I[k][mu][nu][2*lambda],
-                          corr_II[k][mu][nu][2*lambda] );
-              }
-            }
-          }
-        }
-      }  /* end of critical region */
-#endif
-      /***********************************************************
-       * END TEST
-       ***********************************************************/
-
     }  /* end of loop on kernels */
 
-#if 0
-    /***********************************************************
-     * BEGIN TEST
-     ***********************************************************/
-#pragma omp critical
-    {
-      unsigned int rank = ( ( x[0] * LX_global + x[1] ) * LY_global + x[2] ) * LZ_global + x[3];
-
-      for ( int mu = 0; mu < 4; mu++ )
-      {
-        for ( int nu = 0; nu < 4; nu++ )
-        {
-          for ( int lambda = 0; lambda < 4; lambda++ )
-          {
-            for( int k = 0; k < 6; k++ )
-            {
-              fprintf ( stdout, "y %2d s %d %d %d %d fl %d  x %6u  i %3d %3d %3d %3d %3d   %25.16e %25.16e \n",
-                        iy,
-                        ysign_comb[isign][0],
-                        ysign_comb[isign][1],
-                        ysign_comb[isign][2],
-                        ysign_comb[isign][3],
-                        iflavor,
-                        rank,
-                        mu, nu, lambda, idx_comb[k][0], idx_comb[k][1],
-                        corr_I[k][mu][nu][2*lambda  ], corr_I[k][mu][nu][2*lambda+1] );
-            }
-          }
-        }
-      }
-    }  /* end of critical region */
-
-    /***********************************************************
-     * END TEST
-     ***********************************************************/
-#endif
   }  /* end of loop on ix */
 
   /***********************************************************
