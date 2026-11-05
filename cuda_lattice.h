@@ -64,6 +64,10 @@ void cu_2p2_pieces(
     Coord proc_coords, Coord gsw, int n_y, Coord* d_gycoords, Pair xunit,
     QED_kernel_temps kqed_t, Geom global_geom, Geom local_geom);
 
+void cu_2p2_wrap(
+    double* d_P1, double* d_P23x, const double* fwd_y, int iflavor,
+    Coord proc_coords, Coord gsw, int n_y, Coord* d_gycoords, Pair xunit,
+    QED_kernel_temps kqed_t, Geom global_geom, Geom local_geom);
 
 /**
  * Simple interface to KQED.

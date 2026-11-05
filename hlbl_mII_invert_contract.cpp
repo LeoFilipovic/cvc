@@ -371,6 +371,130 @@ inline void compute_2p2_pieces(
 #endif
 }
 
+inline void compute_2p2_wrap(
+    const prop_t fwd_y, double ***** P1, double ****** P23x,
+    const int* gsw, int iflavor, int io_proc, int n_y, const int * gycoords,
+    const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
+    unsigned VOLUME, int Nconf) {
+
+  struct timeval ta, tb, ta2, tb2;
+  
+#if _WITH_TIMER
+  gettimeofday ( &ta, (struct timezone *)NULL );
+#endif
+
+  double* d_P1 = NULL;
+  double* d_P23x = NULL;
+  const int Lmax = get_Lmax();
+  const size_t n_P1 = 4 * 4 * 4 * Lmax;
+  const size_t n_P23x = n_y * kernel_n * kernel_n_geom * 4 * 4 * 4;
+  const size_t sizeof_P1 = n_P1 * sizeof(double);
+  const size_t sizeof_P23x = n_P23x * sizeof(double);
+  checkCudaErrors(cudaMalloc((void**)&d_P1, sizeof_P1));
+  checkCudaErrors(cudaMalloc((void**)&d_P23x, sizeof_P23x));
+  checkCudaErrors(cudaMemset(d_P1, 0, sizeof_P1));
+  checkCudaErrors(cudaMemset(d_P23x, 0, sizeof_P23x));
+  
+  Coord d_proc_coords {
+    .t = g_proc_coords[0],
+    .x = g_proc_coords[1],
+    .y = g_proc_coords[2],
+    .z = g_proc_coords[3]
+  };
+  Geom local_geom { .T = T, .LX = LX, .LY = LY, .LZ = LZ };
+  Geom global_geom { .T = T_global, .LX = LX_global, .LY = LY_global, .LZ = LZ_global };
+  Coord d_gsw = { .t = gsw[0], .x = gsw[1], .y = gsw[2], .z = gsw[3] };
+  Pair d_xunit = { .a = xunit[0], .b = xunit[1] };
+  Coord* gycoords_structs = (Coord*)malloc(n_y*sizeof(Coord));
+  for ( int iy = 0; iy < n_y; iy++ )
+  {
+    gycoords_structs[iy].t = gycoords[4*iy + 0];
+    gycoords_structs[iy].x = gycoords[4*iy + 1];
+    gycoords_structs[iy].y = gycoords[4*iy + 2];
+    gycoords_structs[iy].z = gycoords[4*iy + 3];
+  }
+  Coord* d_gycoords = NULL;
+  checkCudaErrors(cudaMalloc((void**)&d_gycoords, n_y*sizeof(Coord)));
+  checkCudaErrors(cudaMemcpy(
+      (void*)d_gycoords, (const void*)gycoords_structs, n_y*sizeof(Coord), cudaMemcpyHostToDevice));
+  free(gycoords_structs);
+
+#if _WITH_TIMER
+  gettimeofday ( &ta2, (struct timezone *)NULL );
+#endif
+
+  cu_2p2_wrap(
+      d_P1, d_P23x, fwd_y, iflavor, d_proc_coords, d_gsw, n_y, d_gycoords,
+      d_xunit, kqed_t, global_geom, local_geom);
+
+#if _WITH_TIMER
+  checkCudaErrors(cudaDeviceSynchronize());
+  gettimeofday ( &tb2, (struct timezone *)NULL );
+  show_time ( &ta2, &tb2, "hlbl_mII_invert_contract", "2+2 pieces kernel", io_proc == 2 );
+#endif
+
+
+  double* local_P1 = (double*)malloc(sizeof_P1);
+  double* local_P23x = (double*)malloc(sizeof_P23x);
+  double ***** all_P23x = init_5level_dtable ( n_y, kernel_n*kernel_n_geom, 4, 4, 4 );
+  if ( local_P1 == NULL || local_P23x == NULL || all_P23x == NULL )
+  {
+    fprintf ( stderr, "Error alloc local_P1,23x or all_P23x\n" );
+    exit ( 57 );
+  }
+  
+  checkCudaErrors(cudaMemcpy(
+      (void*)local_P1, (const void*)d_P1, sizeof_P1, cudaMemcpyDeviceToHost));
+  checkCudaErrors(cudaMemcpy(
+      (void*)local_P23x, (const void*)d_P23x, sizeof_P23x, cudaMemcpyDeviceToHost));
+
+#ifdef HAVE_MPI
+  // TODO: just MPI_Reduce?
+  if ( MPI_Allreduce(local_P1, P1[iflavor][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+       != MPI_SUCCESS ) {
+    if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
+  }
+  if ( MPI_Allreduce(local_P23x, all_P23x[0][0][0][0], n_P23x, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+       != MPI_SUCCESS ) {
+    if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
+  }
+#else
+  memcpy((void*)P1[iflavor][0][0][0], (void*)local_P1, sizeof_P1);
+  memcpy((void*)all_P23x[0][0][0][0], (void*)local_P23x, sizeof_P23x);
+#endif
+
+  // interleave data into output array
+  for ( int yi = 0; yi < n_y; yi++ )
+  {
+    for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
+    {
+      for ( int igeom = 0; igeom < kernel_n_geom; igeom++ )
+      {
+        memcpy(
+            (void*)P23x[yi][kernel_n_geom*ikernel + igeom][iflavor][0][0],
+            (void*)all_P23x[yi][kernel_n_geom*ikernel + igeom][0][0], sizeof(double)*4*4*4);
+      }
+    }
+  }
+
+  free(local_P1);
+  free(local_P23x);
+  fini_5level_dtable ( &all_P23x );
+
+  checkCudaErrors(cudaFree(d_P1));
+  checkCudaErrors(cudaFree(d_P23x));
+  checkCudaErrors(cudaFree(d_gycoords));
+
+  if ( g_cart_id == 0 )
+  {
+    fprintf ( stdout, "[hlbl_mII_invert_contract] Finished 2+2 pieces for n_y = %d other y points\n", n_y );
+  }
+
+#if _WITH_TIMER
+  gettimeofday ( &tb, (struct timezone *)NULL );
+  show_time ( &ta, &tb, "hlbl_mII_invert_contract", "2+2 pieces", io_proc == 2 );
+#endif
+}
 
 /***********************************************************
  * D_y^+ z g5 gsigma U_src
@@ -939,6 +1063,330 @@ inline void compute_2p2_pieces(
   fini_twopt ( &pimn );
 }
 
+inline void compute_2p2_wrap(
+    const prop_t fwd_y, double ***** P1, double ****** P23x,
+    const int* gsw, int iflavor, int io_proc, int n_y, const int * gycoords,
+    const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
+    unsigned VOLUME, int Nconf) {
+
+  struct timeval ta, tb;
+  
+#if _WITH_TIMER
+  gettimeofday ( &ta, (struct timezone *)NULL );
+#endif
+
+  /***********************************************************
+   * Pi_{mu,nu} = gnu g5 D_y^+ g5 gmu U_y
+   ***********************************************************/
+  twopt_t pimn = init_twopt ( VOLUME );
+  clear_twopt ( pimn, VOLUME );
+  for ( int nu = 0; nu < 4; nu++ )
+  {
+    for ( int mu = 0; mu < 4; mu++ )
+    {
+      for ( int ia = 0; ia < 12; ia++ )
+      {
+#ifdef HAVE_OPENMP
+#pragma omp parallel for
+#endif
+        for ( unsigned int ix = 0; ix < VOLUME; ix++ )
+        {
+          double * _u = fwd_y[iflavor][ia] + _GSI(ix);
+          double * _t = spinor_work[0] + _GSI(ix);
+          _fv_eq_gamma_ti_fv ( _t, mu, _u );
+          _fv_ti_eq_g5 ( _t );
+          double * _s = spinor_work[1] + _GSI(ix);
+          for ( int ib = 0; ib < 12; ib++ )
+          {
+            double * _d = fwd_y[1-iflavor][ib] + _GSI(ix);
+            complex w;
+            _co_eq_fv_dag_ti_fv ( &w, _d, _t );
+            _s[2*ib]   = w.re;
+            _s[2*ib+1] = w.im;
+          }
+          _fv_ti_eq_g5 ( _s );
+          _fv_eq_gamma_ti_fv ( _t, nu, _s );
+          // real part
+          pimn[mu][nu][ix] += _t[2*ia];
+        }
+      }
+    }
+  }
+
+#if 0
+  /***********************************************************
+   * output
+   ***********************************************************/
+  char output_filename[400], type[200];
+  sprintf ( output_filename, "%s.%d.T%d_X%d_Y%d_Z%d.lime", g_outfile_prefix, Nconf, gsw[0], gsw[1], gsw[2], gsw[3] );
+  sprintf ( type, "polarization-tensor-position-space" );
+
+  int exitstatus = write_lime_contraction ( pimn[0][0], output_filename, 64, 8, type, Nconf,  0);
+  if ( exitstatus != 0 )
+  {
+    fprintf ( stderr, "# [hlbl_2p2_invert_contract] Error from write_lime_contraction, status %d   %s %d\n", exitstatus, __FILE__, __LINE__ );
+    EXIT(12);
+  }
+#endif
+  
+
+#if _WITH_TIMER
+  gettimeofday ( &tb, (struct timezone *)NULL );
+  show_time ( &ta, &tb, "hlbl_mII_invert_contract", "pimn", io_proc == 2 );
+#endif
+
+#if _WITH_TIMER
+  gettimeofday ( &ta, (struct timezone *)NULL );
+#endif
+
+  /***********************************************************
+   * P1_{rsn}(zeta)
+   *   = sum_z delta(z_r - zeta) Pi_{sn}(z)
+   ***********************************************************/
+  const int Lmax = get_Lmax();
+  const int n_P1 = 4 * 4 * 4 * Lmax;
+  double **** local_P1 = init_4level_dtable ( 4, 4, 4, Lmax );
+  if ( local_P1 == NULL )
+  {
+    fprintf ( stderr, "Error alloc local_P1\n" );
+    exit ( 57 );
+  }
+  memset((void*)local_P1[0][0][0], 0, sizeof(double)*n_P1);
+  for ( int sigma = 0; sigma < 4; sigma++ )
+  {
+    for ( int nu = 0; nu < 4; nu++ )
+    {
+      // TODO: Parallelize over non-summed coordinate?
+      for ( unsigned int iz = 0; iz < VOLUME; iz++ )
+      {
+        int const z[4] = {
+          ( g_lexic2coords[iz][0] + g_proc_coords[0] * T  - gsw[0] + T_global  ) % T_global,
+          ( g_lexic2coords[iz][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
+          ( g_lexic2coords[iz][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
+          ( g_lexic2coords[iz][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global };
+        for ( int rho = 0; rho < 4; rho++ )
+        {
+          local_P1[rho][sigma][nu][z[rho]] += pimn[sigma][nu][iz];
+        }
+      }
+    }
+  }
+
+#ifdef HAVE_MPI
+  // TODO: just MPI_Reduce?
+  if ( MPI_Allreduce(local_P1[0][0][0], P1[iflavor][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+       != MPI_SUCCESS ) {
+    if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
+  }
+#else
+  memcpy((void*)P1[iflavor][0][0][0], (void*)local_P1[0][0][0], sizeof(double)*n_P1);
+#endif
+
+  fini_4level_dtable ( &local_P1 );
+
+#if _WITH_TIMER
+  gettimeofday ( &tb, (struct timezone *)NULL );
+  show_time ( &ta, &tb, "hlbl_mII_invert_contract", "2+2 pieces (P1)", io_proc == 2 );
+#endif
+
+#if _WITH_TIMER
+  gettimeofday ( &ta, (struct timezone *)NULL );
+#endif
+
+  /***********************************************************
+   * P2_{rsn}(y)
+   *   = sum_x (L_[r,s];mnl(x,y) + L_[r,s];nml(y,x)) Pi_{ml}(x)
+   * P3_{rsn}(y)
+   *   = sum_x (L_[r,s];mln(x+y,y) Pi_{ml}(x)
+   ***********************************************************/
+  int n_P23x = n_y * kernel_n * kernel_n_geom * 4 * 4 * 4;
+  double ***** local_P23x = init_5level_dtable ( n_y, kernel_n*kernel_n_geom, 4, 4, 4 );
+  double ***** all_P23x = init_5level_dtable ( n_y, kernel_n*kernel_n_geom, 4, 4, 4 );
+  if ( local_P23x == NULL || all_P23x == NULL )
+  {
+    fprintf ( stderr, "Error alloc local_P23x or all_P23x\n" );
+    exit ( 57 );
+  }
+  memset ( (void*)local_P23x[0][0][0][0], 0, sizeof(double)*n_P23x );
+
+  
+#ifdef HAVE_OPENMP
+#pragma omp parallel for
+#endif
+  for ( int yi = 0; yi < n_y; yi++ )
+  {
+    double kerv1[6][4][4][4] KQED_ALIGN ;
+    double kerv2[6][4][4][4] KQED_ALIGN ;
+    double kerv3[6][4][4][4] KQED_ALIGN ;
+    double kerv4[6][4][4][4] KQED_ALIGN ;
+
+    // For P2: y = (gsy - gsw)
+    // For P3: y' = (gsw - gsy)
+    // We define y = (gsy - gsw) and use -y as input for P3.
+    int const * gsy = &gycoords[4*yi];
+    int const y[4] = {
+      ( gsy[0] - gsw[0] + T_global ) % T_global,
+      ( gsy[1] - gsw[1] + LX_global ) % LX_global,
+      ( gsy[2] - gsw[2] + LY_global ) % LY_global,
+      ( gsy[3] - gsw[3] + LZ_global ) % LZ_global
+    };
+    int yv[4];
+    site_map ( yv, y ); // NO ZEROHALF!
+    for ( unsigned int ix = 0; ix < VOLUME; ix++ )
+    {
+      int const x[4] = {
+        ( g_lexic2coords[ix][0] + g_proc_coords[0] * T  - gsw[0] + T_global  ) % T_global,
+        ( g_lexic2coords[ix][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
+        ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
+        ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global };
+
+      int xv[4];
+      site_map ( xv, x ); // NO ZEROHALF!
+
+      double const xm[4] = {
+        xv[0] * xunit[0],
+        xv[1] * xunit[0],
+        xv[2] * xunit[0],
+        xv[3] * xunit[0] };
+
+      double const xm_minus[4] = {
+        -xv[0] * xunit[0],
+        -xv[1] * xunit[0],
+        -xv[2] * xunit[0],
+        -xv[3] * xunit[0] };
+
+      double const ym[4] = {
+        yv[0] * xunit[0],
+        yv[1] * xunit[0],
+        yv[2] * xunit[0],
+        yv[3] * xunit[0] };
+
+      double const ym_minus[4] = {
+        -yv[0] * xunit[0],
+        -yv[1] * xunit[0],
+        -yv[2] * xunit[0],
+        -yv[3] * xunit[0] };
+
+      // double const xm_mi_ym[4] = {
+      //   xm[0] - ym[0],
+      //   xm[1] - ym[1],
+      //   xm[2] - ym[2],
+      //   xm[3] - ym[3] };
+      // double const ym_mi_xm[4] = {
+      //   ym[0] - xm[0],
+      //   ym[1] - xm[1],
+      //   ym[2] - xm[2],
+      //   ym[3] - xm[3] };
+
+      int const x_mi_y[4] = {
+        (x[0] - y[0] + T_global) % T_global,
+        (x[1] - y[1] + LX_global) % LX_global,
+        (x[2] - y[2] + LY_global) % LY_global,
+        (x[3] - y[3] + LZ_global) % LZ_global };
+      int xv_mi_yv[4];
+      site_map(xv_mi_yv, x_mi_y); // NO ZEROHALF!
+      double const xm_mi_ym[4] = {
+        xv_mi_yv[0] * xunit[0],
+        xv_mi_yv[1] * xunit[0],
+        xv_mi_yv[2] * xunit[0],
+        xv_mi_yv[3] * xunit[0] };
+
+      int const y_mi_x[4] = {
+        (-x[0] + y[0] + T_global) % T_global,
+        (-x[1] + y[1] + LX_global) % LX_global,
+        (-x[2] + y[2] + LY_global) % LY_global,
+        (-x[3] + y[3] + LZ_global) % LZ_global };
+      int yv_mi_xv[4];
+      site_map(yv_mi_xv, y_mi_x); // NO ZEROHALF!
+      double const ym_mi_xm[4] = {
+        yv_mi_xv[0] * xunit[0],
+        yv_mi_xv[1] * xunit[0],
+        yv_mi_xv[2] * xunit[0],
+        yv_mi_xv[3] * xunit[0] };
+
+
+      for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
+      {
+        KQED_LX[ikernel]( xm, ym,             kqed_t, kerv1 );
+        KQED_LX[ikernel]( ym, xm,             kqed_t, kerv2 );
+        KQED_LX[ikernel]( xm_mi_ym, ym_minus, kqed_t, kerv3 );
+        KQED_LX[ikernel]( ym_mi_xm, xm_minus, kqed_t, kerv4 );
+        for( int k = 0; k < 6; k++ )
+        {
+          int const rho   = idx_comb[k][0];
+          int const sigma = idx_comb[k][1];
+          for ( int nu = 0; nu < 4; nu++ )
+          {
+            #if kernel_n_geom != 5
+            #error "Number of QED kernel geometries does not match implementation"
+            #endif
+            for ( int mu = 0; mu < 4; mu++ )
+            {
+              for ( int lambda = 0; lambda < 4; lambda++ )
+              {
+                // P2_0
+                local_P23x[yi][ikernel*kernel_n_geom + 0][rho][sigma][nu] +=
+                    kerv1[k][mu][nu][lambda] * pimn[mu][lambda][ix];
+                // P2_1
+                local_P23x[yi][ikernel*kernel_n_geom + 1][rho][sigma][nu] +=
+                    kerv2[k][nu][mu][lambda] * pimn[mu][lambda][ix];
+                // P3
+                local_P23x[yi][ikernel*kernel_n_geom + 2][rho][sigma][nu] +=
+                    kerv3[k][mu][lambda][nu] * pimn[mu][lambda][ix];
+                // P4_0
+                local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu] +=
+                    kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                // P4_1
+                local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] +=
+                   (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                local_P23x[yi][ikernel*kernel_n_geom + 4][sigma][rho][nu] -=
+                   (xv[sigma]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+              }
+            }
+            // // P4_1 (old and wrong I think)
+            // local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] =
+            //     (yv[rho]-xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu];
+            // local_P23x[yi][ikernel*kernel_n_geom + 4][sigma][rho][nu] =
+            //     (yv[sigma]-xv[sigma]) * (-local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu]);
+          }
+        }
+      }
+    }
+  }
+
+#ifdef HAVE_MPI
+  if ( MPI_Allreduce(local_P23x[0][0][0][0], all_P23x[0][0][0][0], n_P23x, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+       != MPI_SUCCESS ) {
+    if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
+  }
+#else
+  memcpy((void*)all_P23x[0][0][0][0], (void*)local_P23x[0][0][0][0], sizeof(double)*n_P23x);
+#endif
+
+  // interleave data into output array
+  for ( int yi = 0; yi < n_y; yi++ )
+  {
+    for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
+    {
+      for (int igeom = 0; igeom < kernel_n_geom; igeom++ )
+      {
+        memcpy(
+            (void*)P23x[yi][ikernel*kernel_n_geom + igeom][iflavor][0][0],
+            (void*)all_P23x[yi][ikernel*kernel_n_geom + igeom][0][0], sizeof(double)*4*4*4);
+      }
+    }
+  }
+
+  fini_5level_dtable ( &local_P23x );
+  fini_5level_dtable ( &all_P23x );
+
+#if _WITH_TIMER
+  gettimeofday ( &tb, (struct timezone *)NULL );
+  show_time ( &ta, &tb, "hlbl_mII_invert_contract", "2+2 pieces (P2-P3)", io_proc == 2 );
+#endif
+
+  fini_twopt ( &pimn );
+}
 
 /***********************************************************
  * D_y^+ z g5 gsigma U_src
@@ -2021,11 +2469,14 @@ int main(int argc, char **argv) {
     EXIT(123);
   }
   memset ( (void*)P1[0][0][0][0], 0, sizeof(double)*2*4*4*4*Lmax );
+  double ***** P1_wrap = init_5level_dtable ( 2, 4, 4, 4, Lmax );
+  memset ( (void*)P1_wrap[0][0][0][0], 0, sizeof(double)*2*4*4*4*Lmax );
 
   /***********************************************************
    * P2/3/x_{rho,sigma,nu} will be allocated later
    ***********************************************************/
   double ****** P23x; // = init_6level_dtable ( MAX_SOURCE_PAIR_NUMBER, kernel_n*kernel_n_geom, 2, 4, 4, 4 );
+  double ****** P23x_wrap;
 
   /***********************************************************
    * unit for x, y
@@ -2330,6 +2781,7 @@ int main(int argc, char **argv) {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
           EXIT(123);
         }
+        P23x_wrap = init_6level_dtable ( n_yp, kernel_n*kernel_n_geom, 2, 4, 4, 4 );
 
         /**********************************************************
          * compute P1, P2, P3, ...
@@ -2337,7 +2789,9 @@ int main(int argc, char **argv) {
         compute_2p2_pieces(
             fwd_y, P1, P23x, gsy, iflavor, io_proc, n_yp, gyp,
             xunit, spinor_work, kqed_t, VOLUME, Nconf);
-
+        compute_2p2_wrap(
+            fwd_y, P1_wrap, P23x_wrap, gsy, iflavor, io_proc, n_yp, gyp,
+            xunit, spinor_work, kqed_t, VOLUME, Nconf);
         /**********************************************************
          * write P1, P2, P3, ...
          **********************************************************/
@@ -2349,6 +2803,14 @@ int main(int argc, char **argv) {
           sprintf (key, "/P1/t%dx%dy%dz%d", gsy[0], gsy[1], gsy[2], gsy[3] );
 
           exitstatus = write_h5_contraction ( P1[0][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
+          if ( exitstatus != 0 )
+          {
+            fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
+            EXIT(12);
+          }
+          sprintf (key, "/P1_wrap/t%dx%dy%dz%d", gsy[0], gsy[1], gsy[2], gsy[3] );
+
+          exitstatus = write_h5_contraction ( P1_wrap[0][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
           if ( exitstatus != 0 )
           {
             fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
@@ -2379,12 +2841,27 @@ int main(int argc, char **argv) {
                   fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
                   EXIT(12);
                 }
+
+                sprintf (key, "/%s_wrap/t%dx%dy%dz%d/t%dx%dy%dz%d/%s",
+                         KQED_GEOM_NAME[igeom], gsy[0], gsy[1], gsy[2], gsy[3],
+                         gyp[4*iyp+0], gyp[4*iyp+1], gyp[4*iyp+2], gyp[4*iyp+3],
+                         KQED_NAME[ikernel] );
+
+                exitstatus = write_h5_contraction (
+                    P23x_wrap[iyp][kernel_n_geom*ikernel+igeom][0][0][0], NULL, output_filename, key,
+                  "double", ncdim, cdim );
+                if ( exitstatus != 0 )
+                {
+                  fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
+                  EXIT(12);
+                }
               }
             }
           }
         }
 
         fini_6level_dtable( &P23x );
+        fini_6level_dtable( &P23x_wrap );
         
       } /* end of P1, P2, P3, ... */
       
@@ -2620,6 +3097,7 @@ int main(int argc, char **argv) {
   fini_prop ( &fwd_y );
 
   fini_5level_dtable ( &P1 );
+  fini_5level_dtable ( &P1_wrap );
 
 #ifndef HAVE_TMLQCD_LIBWRAPPER
   free(g_gauge_field);
