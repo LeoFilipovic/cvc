@@ -782,7 +782,7 @@ inline void compute_2p2_pieces(
       ( gsy[3] - gsw[3] + LZ_global ) % LZ_global
     };
     int yv[4];
-    site_map_zerohalf ( yv, y );
+    site_map ( yv, y ); // NO ZEROHALF!
     for ( unsigned int ix = 0; ix < VOLUME; ix++ )
     {
       int const x[4] = {
@@ -792,7 +792,7 @@ inline void compute_2p2_pieces(
         ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global };
 
       int xv[4];
-      site_map_zerohalf ( xv, x );
+      site_map ( xv, x ); // NO ZEROHALF!
 
       double const xm[4] = {
         xv[0] * xunit[0],
@@ -818,28 +818,43 @@ inline void compute_2p2_pieces(
         -yv[2] * xunit[0],
         -yv[3] * xunit[0] };
 
-      // int const x_mi_y[4] = {
-      //   (x[0] - y[0] + T_global) % T_global,
-      //   (x[1] - y[1] + LX_global) % LX_global,
-      //   (x[2] - y[2] + LY_global) % LY_global,
-      //   (x[3] - y[3] + LZ_global) % LZ_global };
-      // int xv_mi_yv[4];
-      // site_map_zerohalf(xv_mi_yv, x_mi_y);
       // double const xm_mi_ym[4] = {
-      //   xv_mi_yv[0] * xunit[0],
-      //   xv_mi_yv[1] * xunit[0],
-      //   xv_mi_yv[2] * xunit[0],
-      //   xv_mi_yv[3] * xunit[0] };
+      //   xm[0] - ym[0],
+      //   xm[1] - ym[1],
+      //   xm[2] - ym[2],
+      //   xm[3] - ym[3] };
+      // double const ym_mi_xm[4] = {
+      //   ym[0] - xm[0],
+      //   ym[1] - xm[1],
+      //   ym[2] - xm[2],
+      //   ym[3] - xm[3] };
+
+      int const x_mi_y[4] = {
+        (x[0] - y[0] + T_global) % T_global,
+        (x[1] - y[1] + LX_global) % LX_global,
+        (x[2] - y[2] + LY_global) % LY_global,
+        (x[3] - y[3] + LZ_global) % LZ_global };
+      int xv_mi_yv[4];
+      site_map(xv_mi_yv, x_mi_y); // NO ZEROHALF!
       double const xm_mi_ym[4] = {
-        xm[0] - ym[0],
-        xm[1] - ym[1],
-        xm[2] - ym[2],
-        xm[3] - ym[3] };
+        xv_mi_yv[0] * xunit[0],
+        xv_mi_yv[1] * xunit[0],
+        xv_mi_yv[2] * xunit[0],
+        xv_mi_yv[3] * xunit[0] };
+
+      int const y_mi_x[4] = {
+        (-x[0] + y[0] + T_global) % T_global,
+        (-x[1] + y[1] + LX_global) % LX_global,
+        (-x[2] + y[2] + LY_global) % LY_global,
+        (-x[3] + y[3] + LZ_global) % LZ_global };
+      int yv_mi_xv[4];
+      site_map(yv_mi_xv, y_mi_x); // NO ZEROHALF!
       double const ym_mi_xm[4] = {
-        ym[0] - xm[0],
-        ym[1] - xm[1],
-        ym[2] - xm[2],
-        ym[3] - xm[3] };
+        yv_mi_xv[0] * xunit[0],
+        yv_mi_xv[1] * xunit[0],
+        yv_mi_xv[2] * xunit[0],
+        yv_mi_xv[3] * xunit[0] };
+
 
       for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
       {
@@ -872,13 +887,18 @@ inline void compute_2p2_pieces(
                 // P4_0
                 local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu] +=
                     kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                // P4_1
+                local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] +=
+                   (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                local_P23x[yi][ikernel*kernel_n_geom + 4][sigma][rho][nu] -=
+                   (xv[sigma]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
               }
             }
-            // P4_1
-            local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] =
-                (yv[rho]-xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu];
-            local_P23x[yi][ikernel*kernel_n_geom + 4][sigma][rho][nu] =
-                (yv[sigma]-xv[sigma]) * (-local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu]);
+            // // P4_1 (old and wrong I think)
+            // local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] =
+            //     (yv[rho]-xv[rho]) * local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu];
+            // local_P23x[yi][ikernel*kernel_n_geom + 4][sigma][rho][nu] =
+            //     (yv[sigma]-xv[sigma]) * (-local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu]);
           }
         }
       }
@@ -1252,11 +1272,25 @@ inline void compute_4pt_contraction(
     double * const _corr_I  = corr_I[0][0][0];
     double * const _corr_II = corr_II[0][0][0];
 
+    // double const xm_mi_ym[4] = {
+    //   xm[0] - ym[0],
+    //   xm[1] - ym[1],
+    //   xm[2] - ym[2],
+    //   xm[3] - ym[3] };
+
+    int const x_mi_y[4] = {
+      (xv[0] - yv[0] + T_global) % T_global,
+      (xv[1] - yv[1] + LX_global) % LX_global,
+      (xv[2] - yv[2] + LY_global) % LY_global,
+      (xv[3] - yv[3] + LZ_global) % LZ_global };
+    int xv_mi_yv[4];
+    site_map(xv_mi_yv, x_mi_y); // NO ZEROHALF!
+
     double const xm_mi_ym[4] = {
-      xm[0] - ym[0],
-      xm[1] - ym[1],
-      xm[2] - ym[2],
-      xm[3] - ym[3] };
+      xv_mi_yv[0] * xunit[0],
+      xv_mi_yv[1] * xunit[0],
+      xv_mi_yv[2] * xunit[0],
+      xv_mi_yv[3] * xunit[0] };
 
     /***********************************************************
      * loop on kernsl
