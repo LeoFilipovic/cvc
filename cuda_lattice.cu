@@ -480,6 +480,226 @@ void ker_4pt_contraction(
 }
 
 __global__
+void ker_4pt_wrap(
+    double* _RESTR kernel_sum, const double* _RESTR g_dzu, const double* _RESTR g_dzsu,
+    const double* _RESTR fwd_src, const double* _RESTR fwd_y, int iflavor, Coord g_proc_coords,
+    Coord gsx, Pair xunit, Coord yv, QED_kernel_temps kqed_t,
+    Geom global_geom, Geom local_geom) {
+
+  // Coord origin = get_thread_origin(local_geom);
+  int gsx_arr[4] = {gsx.t, gsx.x, gsx.y, gsx.z};
+  size_t VOLUME = local_geom.T * local_geom.LX * local_geom.LY * local_geom.LZ;
+  int local_geom_arr[4] = {local_geom.T, local_geom.LX, local_geom.LY, local_geom.LZ};
+  int global_geom_arr[4] = {global_geom.T, global_geom.LX, global_geom.LY, global_geom.LZ};
+  int proc_coord_arr[4] = {g_proc_coords.t, g_proc_coords.x, g_proc_coords.y, g_proc_coords.z};
+
+  // double corr_I[6 * 4 * 4 * 4 * 2];
+  // double corr_II[6 * 4 * 4 * 4 * 2];
+  // double dxu[4 * 12 * 12 * 2];
+  // __shared__ double corr_I_shared[CUDA_THREAD_DIM_1D * 6 * 4 * 4 * 4];
+  // __shared__ double corr_II_shared[CUDA_THREAD_DIM_1D * 6 * 4 * 4 * 4];
+  // double* corr_I_re = &corr_I_shared[threadIdx.x * 6 * 4 * 4 * 4];
+  // double* corr_II_re = &corr_II_shared[threadIdx.x * 6 * 4 * 4 * 4];
+  double corr_I_re[6 * 4 * 4 * 4];
+  double corr_II_re[6 * 4 * 4 * 4];
+
+  double kernel_sum_work[CUDA_N_QED_KERNEL] = { 0 };
+  double spinor_work_0[24], spinor_work_1[24];
+  double kerv[6][4][4][4] KQED_ALIGN = { 0 };
+
+  for (int ix = blockIdx.x * blockDim.x + threadIdx.x;
+       ix < VOLUME; ix += blockDim.x * gridDim.x) {
+    Coord coord = lexic2coord(ix, local_geom);
+    const int tt = coord.t;
+    const int xx = coord.x;
+    const int yy = coord.y;
+    const int zz = coord.z;
+    int coord_arr[4] = {tt, xx, yy, zz};
+    int xv[4], xvzh[4];
+    #pragma unroll
+    for (int rho = 0; rho < 4; ++rho) {
+      int xrho = coord_arr[rho] + proc_coord_arr[rho] * local_geom_arr[rho] - gsx_arr[rho];
+      xrho = (xrho + global_geom_arr[rho]) % global_geom_arr[rho];
+      xv[rho] = coord_map(xrho, global_geom_arr[rho]);
+      xvzh[rho] = coord_map_zerohalf(xrho, global_geom_arr[rho]);
+    }
+
+    int const x_mi_y_true[4] = {
+      (xv[0] - yv.t + global_geom_arr[0]) % global_geom_arr[0],
+      (xv[1] - yv.x + global_geom_arr[1]) % global_geom_arr[1],
+      (xv[2] - yv.y + global_geom_arr[2]) % global_geom_arr[2],
+      (xv[3] - yv.z + global_geom_arr[3]) % global_geom_arr[3] };
+    int xv_mi_yv_true[4] = {
+      coord_map(x_mi_y_true[0], global_geom_arr[0]),
+      coord_map(x_mi_y_true[1], global_geom_arr[1]),
+      coord_map(x_mi_y_true[2], global_geom_arr[2]),
+      coord_map(x_mi_y_true[3], global_geom_arr[3]) // NO ZEROHALF!
+    };
+    int const xv_mi_yv_old[4] = {
+      (xv[0] - yv.t), (xv[1] - yv.x), (xv[2] - yv.y),  (xv[3] - yv.z)};
+    
+    if (xv_mi_yv_true[0] == xv_mi_yv_old[0] && xv_mi_yv_true[1] == xv_mi_yv_old[1] && 
+        xv_mi_yv_true[2] == xv_mi_yv_old[2]  && xv_mi_yv_true[3] == xv_mi_yv_old[3] ) {
+        continue;
+      }
+
+    #pragma unroll
+    for (int mu = 0; mu < 4; ++mu) {
+      /// COMPUTE DXU v1
+      double dxu[12 * 12 * 2] = { 0 };
+      for (int ia = 0; ia < 12; ++ia) {
+        const double* _d = &fwd_src[((1-iflavor) * 12 + ia) * _GSI(VOLUME) + _GSI(ix)];
+        double* _t = spinor_work_1;
+        _fv_eq_gamma_ti_fv(_t, mu, _d);
+        _fv_ti_eq_g5(_t);
+        for (int ib = 0; ib < 12; ++ib) {
+          const double* _u = &fwd_y[(iflavor * 12 + ib) * _GSI(VOLUME) + _GSI(ix)];
+          for (int i = 0; i < 12; ++i) {
+            double _t_re = _t[2*i];
+            double _t_im = _t[2*i+1];
+            double _u_re = _u[2*i];
+            double _u_im = _u[2*i+1];
+            /* -1 factor due to (g5 gmu)^+ = -g5 gmu */
+            dxu[(ib * 12 + ia) * 2 + 0] += -(_t_re * _u_re + _t_im * _u_im);
+            dxu[(ib * 12 + ia) * 2 + 1] += -(_t_re * _u_im - _t_im * _u_re);
+          }
+        }
+      }
+
+      #pragma unroll
+      for (int k = 0; k < 6; ++k) {
+        const int sigma = idx_comb.comb[k][1];
+        const int rho = idx_comb.comb[k][0];
+        #pragma unroll
+        for (int nu = 0; nu < 4; ++nu) {
+          #pragma unroll
+          for (int lambda = 0; lambda < 4; ++lambda) {
+            double *_corr_I_re = &corr_I_re[((k * 4 + mu) * 4 + nu) * 4 + lambda];
+            double *_corr_II_re = &corr_II_re[((k * 4 + mu) * 4 + nu) * 4 + lambda];
+            _corr_I_re[0] = 0.0;
+            _corr_II_re[0] = 0.0;
+            for (int ia = 0; ia < 12; ++ia) {
+              /// COMPUTE DXU v2
+              // double dxu[12 * 2];
+              // const double* _u = &fwd_y[(iflavor * 12 + ia) * _GSI(VOLUME) + _GSI(ix)];
+              // for (int ic = 0; ic < 12; ++ic) {
+              //   const double* _d = &fwd_src[((1-iflavor) * 12 + ic) * _GSI(VOLUME) + _GSI(ix)];
+              //   double* _t = spinor_work_1;
+              //   _fv_eq_gamma_ti_fv(_t, mu, _d);
+              //   _fv_ti_eq_g5(_t);
+              //   for (int i = 0; i < 12; ++i) {
+              //     double _t_re = _t[2*i];
+              //     double _t_im = _t[2*i+1];
+              //     double _u_re = _u[2*i];
+              //     double _u_im = _u[2*i+1];
+              //     /* -1 factor due to (g5 gmu)^+ = -g5 gmu */
+              //     dxu[2*ic] += -(_t_re * _u_re + _t_im * _u_im);
+              //     dxu[2*ic+1] += -(_t_re * _u_im - _t_im * _u_re);
+              //   }
+              // }
+              // double *_dxu = &dxu[0];
+              double *_dxu = &dxu[ia * 12 * 2];
+              double *_t = spinor_work_0;
+              _fv_eq_gamma_ti_fv(_t, 5, _dxu);
+              double *_g_dxu = spinor_work_1;
+              _fv_eq_gamma_ti_fv(_g_dxu, lambda, _t);
+              for (int ib = 0; ib < 12; ++ib) {
+                double u_re = _g_dxu[2*ib];
+                double u_im = _g_dxu[2*ib+1];
+                double v_re = g_dzu[(((k * 4 + nu) * 12 + ib) * 12 + ia) * 2];
+                double v_im = g_dzu[(((k * 4 + nu) * 12 + ib) * 12 + ia) * 2 + 1];
+                _corr_I_re[0] -= u_re * v_re - u_im * v_im;
+                v_re = (
+                    xvzh[rho] * g_dzsu[(((sigma * 4 + nu) * 12 + ib) * 12 + ia) * 2] -
+                    xvzh[sigma] * g_dzsu[(((rho * 4 + nu) * 12 + ib) * 12 + ia) * 2] );
+                v_im = (
+                    xvzh[rho] * g_dzsu[(((sigma * 4 + nu) * 12 + ib) * 12 + ia) * 2 + 1] -
+                    xvzh[sigma] * g_dzsu[(((rho * 4 + nu) * 12 + ib) * 12 + ia) * 2 + 1] );
+                _corr_II_re[0] -= u_re * v_re - u_im * v_im;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    double const xm[4] = {
+      xv[0] * xunit.a,
+      xv[1] * xunit.a,
+      xv[2] * xunit.a,
+      xv[3] * xunit.a };
+
+    double const ym[4] = {
+      yv.t * xunit.a,
+      yv.x * xunit.a,
+      yv.y * xunit.a,
+      yv.z * xunit.a };
+
+    double * const _corr_I_re  = corr_I_re;
+    double * const _corr_II_re = corr_II_re;
+
+
+    double const xm_mi_ym_true[4] = {
+      xv_mi_yv_true[0] * xunit.a,
+      xv_mi_yv_true[1] * xunit.a,
+      xv_mi_yv_true[2] * xunit.a,
+      xv_mi_yv_true[3] * xunit.a
+    };
+    double const xm_mi_ym_old[4] = {
+      xv_mi_yv_old[0] * xunit.a,
+      xv_mi_yv_old[1] * xunit.a,
+      xv_mi_yv_old[2] * xunit.a,
+      xv_mi_yv_old[3] * xunit.a
+    };
+
+    for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
+      // dtmp += (
+      //     kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda]
+      //     - kerv3[k][lambda][nu][mu] ) * _corr_I[2*i]
+      //     + kerv3[k][lambda][nu][mu] * _corr_II[2*i];
+      double dtmp = 0.;
+      int i;
+      
+      KQED_LX( ikernel, xm, xm_mi_ym_old, kqed_t, kerv );
+      i = 0;
+      for( int k = 0; k < 6; k++ ) {
+        for ( int mu = 0; mu < 4; mu++ ) {
+          for ( int nu = 0; nu < 4; nu++ ) {
+            for ( int lambda = 0; lambda < 4; lambda++ ) {
+              dtmp -= kerv[k][lambda][nu][mu] * _corr_I_re[i];
+              dtmp += kerv[k][lambda][nu][mu] * _corr_II_re[i];
+              // dtmp += _corr_II_re[i] - _corr_I_re[i];
+              i++;
+            }
+          }
+        }
+      }
+      KQED_LX( ikernel, xm, xm_mi_ym_true, kqed_t, kerv );
+      i = 0;
+      for( int k = 0; k < 6; k++ ) {
+        for ( int mu = 0; mu < 4; mu++ ) {
+          for ( int nu = 0; nu < 4; nu++ ) {
+            for ( int lambda = 0; lambda < 4; lambda++ ) {
+              dtmp += kerv[k][lambda][nu][mu] * _corr_I_re[i];
+              dtmp -= kerv[k][lambda][nu][mu] * _corr_II_re[i];
+              // dtmp += _corr_II_re[i] - _corr_I_re[i];
+              i++;
+            }
+          }
+        }
+      }
+      kernel_sum_work[ikernel] += dtmp;
+    }
+
+  } // end coord loop
+
+  // reduce (TODO faster reduce algo?)
+  for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
+    atomicAdd_system(&kernel_sum[ikernel], kernel_sum_work[ikernel]);
+  }
+}
+
+__global__
 void ker_2p2_pieces(
     double* _RESTR P1, double* _RESTR P23x,
     const double* _RESTR fwd_y, int iflavor, Coord g_proc_coords,
@@ -829,6 +1049,31 @@ void cu_4pt_contraction(
   // dim3 kernel_nblocks(nx, ny, nz);
   // dim3 kernel_nthreads(CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D);
   ker_4pt_contraction<<<kernel_nblocks, kernel_nthreads>>>(
+      d_kernel_sum, d_g_dzu, d_g_dzsu, fwd_src, fwd_y, iflavor, proc_coords,
+      gsx, xunit, yv, kqed_t, global_geom, local_geom);
+}
+
+void cu_4pt_wrap(
+    double* d_kernel_sum, const double* d_g_dzu, const double* d_g_dzsu,
+    const double* fwd_src, const double* fwd_y, int iflavor, Coord proc_coords,
+    Coord gsx, Pair xunit, Coord yv, QED_kernel_temps kqed_t,
+    Geom global_geom, Geom local_geom) {
+  size_t T = local_geom.T;
+  size_t LX = local_geom.LX;
+  size_t LY = local_geom.LY;
+  size_t LZ = local_geom.LZ;
+  size_t VOLUME = T * LX * LY * LZ;
+  size_t kernel_nthreads = CUDA_THREAD_DIM_1D;
+  size_t kernel_nblocks = (VOLUME + kernel_nthreads - 1) / kernel_nthreads;
+  // const size_t BS_TX = CUDA_THREAD_DIM_4D * CUDA_BLOCK_SIZE * CUDA_BLOCK_SIZE;
+  // const size_t BS_Y = CUDA_THREAD_DIM_4D * CUDA_BLOCK_SIZE;
+  // const size_t BS_Z = CUDA_THREAD_DIM_4D * CUDA_BLOCK_SIZE;
+  // size_t nx = (T*LX + BS_TX - 1) / BS_TX;
+  // size_t ny = (LY + BS_Y - 1) / BS_Y;
+  // size_t nz = (LZ + BS_Z - 1) / BS_Z;
+  // dim3 kernel_nblocks(nx, ny, nz);
+  // dim3 kernel_nthreads(CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D, CUDA_THREAD_DIM_4D);
+  ker_4pt_wrap<<<kernel_nblocks, kernel_nthreads>>>(
       d_kernel_sum, d_g_dzu, d_g_dzsu, fwd_src, fwd_y, iflavor, proc_coords,
       gsx, xunit, yv, kqed_t, global_geom, local_geom);
 }

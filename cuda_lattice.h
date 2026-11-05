@@ -54,6 +54,11 @@ void cu_4pt_contraction(
     const double* fwd_src, const double* fwd_y, int iflavor, Coord proc_coords,
     Coord gsx, Pair xunit, Coord yv, QED_kernel_temps kqed_t,
     Geom global_geom, Geom local_geom);
+void cu_4pt_wrap(
+    double* d_kernel_sum, const double* d_g_dzu, const double* d_g_dzsu,
+    const double* fwd_src, const double* fwd_y, int iflavor, Coord proc_coords,
+    Coord gsx, Pair xunit, Coord yv, QED_kernel_temps kqed_t,
+    Geom global_geom, Geom local_geom);
 void cu_2p2_pieces(
     double* d_P1, double* d_P23x, const double* fwd_y, int iflavor,
     Coord proc_coords, Coord gsw, int n_y, Coord* d_gycoords, Pair xunit,

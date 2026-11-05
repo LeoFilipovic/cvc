@@ -557,7 +557,7 @@ inline void compute_4pt_wrap(
   Coord d_yv = { .t = yv[0], .x = yv[1], .y = yv[2], .z = yv[3] };
   Pair d_xunit = { .a = xunit[0], .b = xunit[1] };
 
-  cu_4pt_contraction(
+  cu_4pt_wrap(
       d_kernel_sum, d_g_dzu, d_g_dzsu, fwd_src, fwd_y, iflavor, d_proc_coords,
       d_gsx, d_xunit, d_yv, kqed_t, global_geom, local_geom);
 
@@ -1461,7 +1461,8 @@ inline void compute_4pt_wrap(
 
   double kerv1[6][4][4][4] KQED_ALIGN ;
   double kerv2[6][4][4][4] KQED_ALIGN ;
-  double kerv3[6][4][4][4] KQED_ALIGN ;
+  double kerv3_true[6][4][4][4] KQED_ALIGN ;
+  double kerv3_old[6][4][4][4] KQED_ALIGN ;
   
 
   /***********************************************************
@@ -1490,6 +1491,27 @@ inline void compute_4pt_wrap(
     int xv[4], xvzh[4];
     site_map ( xv, x );
     site_map_zerohalf ( xvzh, x );
+
+    
+    int const xv_mi_yv_old[4] = {
+      xv[0] - yv[0],
+      xv[1] - yv[1],
+      xv[2] - yv[2],
+      xv[3] - yv[3] };
+
+    int const x_mi_y_true[4] = {
+      (xv[0] - yv[0] + T_global) % T_global,
+      (xv[1] - yv[1] + LX_global) % LX_global,
+      (xv[2] - yv[2] + LY_global) % LY_global,
+      (xv[3] - yv[3] + LZ_global) % LZ_global };
+    int xv_mi_yv_true[4];
+    site_map(xv_mi_yv_true, x_mi_y_true); // NO ZEROHALF!
+
+    if (xv_mi_yv_true[0] == xv_mi_yv_old[0] && xv_mi_yv_true[1] == xv_mi_yv_old[1] && 
+        xv_mi_yv_true[2] == xv_mi_yv_old[2]  && xv_mi_yv_true[3] == xv_mi_yv_old[3] ) {
+        continue;
+      }
+
 
     for ( int ib = 0; ib < 12; ib++)
     {
@@ -1621,20 +1643,20 @@ inline void compute_4pt_wrap(
       yv[2] * xunit[0],
       yv[3] * xunit[0] };
 
-
-    // double * const _kerv1   = (double * const )kerv1;
-    // double * const _kerv2   = (double * const )kerv2;
-    // double * const _kerv3   = (double * const )kerv3;
-
     double * const _corr_I  = corr_I[0][0][0];
     double * const _corr_II = corr_II[0][0][0];
 
-    double const xm_mi_ym[4] = {
-      xm[0] - ym[0],
-      xm[1] - ym[1],
-      xm[2] - ym[2],
-      xm[3] - ym[3] };
+    double const xm_mi_ym_true[4] = {
+      xv_mi_yv_true[0] * xunit[0],
+      xv_mi_yv_true[1] * xunit[0],
+      xv_mi_yv_true[2] * xunit[0],
+      xv_mi_yv_true[3] * xunit[0] };
 
+    double const xm_mi_ym_old[4] = {
+      xv_mi_yv_old[0] * xunit[0],
+      xv_mi_yv_old[1] * xunit[0],
+      xv_mi_yv_old[2] * xunit[0],
+      xv_mi_yv_old[3] * xunit[0] };
     /***********************************************************
      * loop on kernsl
      ***********************************************************/
@@ -1643,7 +1665,8 @@ inline void compute_4pt_wrap(
 
       KQED_LX[ikernel]( xm, ym,       kqed_t, kerv1 );
       KQED_LX[ikernel]( ym, xm,       kqed_t, kerv2 );
-      KQED_LX[ikernel]( xm, xm_mi_ym, kqed_t, kerv3 );
+      KQED_LX[ikernel]( xm, xm_mi_ym_true, kqed_t, kerv3_true );
+      KQED_LX[ikernel]( xm, xm_mi_ym_old, kqed_t, kerv3_old );
       double dtmp = 0.;
       int i = 0;
       for( int k = 0; k < 6; k++ )
@@ -1654,9 +1677,10 @@ inline void compute_4pt_wrap(
           {
             for ( int lambda = 0; lambda < 4; lambda++ )
             {
-              dtmp += ( kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3[k][lambda][nu][mu] ) * _corr_I[2*i]
-                  + kerv3[k][lambda][nu][mu] * _corr_II[2*i];
-
+              dtmp += ( kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3_old[k][lambda][nu][mu] ) * _corr_I[2*i]
+                  + kerv3_old[k][lambda][nu][mu] * _corr_II[2*i];
+              dtmp -= ( kerv1[k][mu][nu][lambda] + kerv2[k][nu][mu][lambda] - kerv3_true[k][lambda][nu][mu] ) * _corr_I[2*i]
+                  + kerv3_true[k][lambda][nu][mu] * _corr_II[2*i];
               i++;
             }
           }
