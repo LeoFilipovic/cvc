@@ -1073,16 +1073,16 @@ void ker_2p2_wrap(
       int zrho = coord_arr[rho] + proc_coord_arr[rho] * local_geom_arr[rho] - gsw_arr[rho];
       z[rho] = (zrho + global_geom_arr[rho]) % global_geom_arr[rho];
     }
-    // reduce (TODO faster reduce algo?)
-    for (int sigma = 0; sigma < 4; ++sigma) {
-      for (int nu = 0; nu < 4; ++nu) {
-        for (int rho = 0; rho < 4; ++rho) {
-          atomicAdd_system(
-              &P1[(((rho * 4) + sigma) * 4 + nu) * Lmax + z[rho]],
-              pimn[sigma][nu]);
-        }
-      }
-    }
+    // // reduce (TODO faster reduce algo?)
+    // for (int sigma = 0; sigma < 4; ++sigma) {
+    //   for (int nu = 0; nu < 4; ++nu) {
+    //     for (int rho = 0; rho < 4; ++rho) {
+    //       atomicAdd_system(
+    //           &P1[(((rho * 4) + sigma) * 4 + nu) * Lmax + z[rho]],
+    //           pimn[sigma][nu]);
+    //     }
+    //   }
+    // }
 
     for (int yi = 0; yi < n_y; yi++) {
       // For P2: y = (gsy - gsw)
@@ -1095,50 +1095,31 @@ void ker_2p2_wrap(
         (gsy_arr[2] - gsw_arr[2] + global_geom_arr[2]) % global_geom_arr[2],
         (gsy_arr[3] - gsw_arr[3] + global_geom_arr[3]) % global_geom_arr[3]
       };
-      int const yv[4] = {
+      int const yv_true[4] = {
         coord_map(y[0], global_geom.T),
         coord_map(y[1], global_geom.LX),
         coord_map(y[2], global_geom.LY),
         coord_map(y[3], global_geom.LZ) // NO ZEROHALF!
       };
-      double const ym[4] = {
-        yv[0] * xunit.a,
-        yv[1] * xunit.a,
-        yv[2] * xunit.a,
-        yv[3] * xunit.a };
-      double const ym_minus[4] = {
-        -yv[0] * xunit.a,
-        -yv[1] * xunit.a,
-        -yv[2] * xunit.a,
-        -yv[3] * xunit.a };
-      
-      int const xv[4] = {
+      int const yv_old[4] = {
+        coord_map_zerohalf(y[0], global_geom.T),
+        coord_map_zerohalf(y[1], global_geom.LX),
+        coord_map_zerohalf(y[2], global_geom.LY),
+        coord_map_zerohalf(y[3], global_geom.LZ)
+      };
+
+      int const xv_true[4] = {
         coord_map(z[0], global_geom_arr[0]),
         coord_map(z[1], global_geom_arr[1]),
         coord_map(z[2], global_geom_arr[2]),
         coord_map(z[3], global_geom_arr[3]) // NO ZEROHALF!
       };
-      double const xm[4] = {
-        xv[0] * xunit.a,
-        xv[1] * xunit.a,
-        xv[2] * xunit.a,
-        xv[3] * xunit.a };
-      double const xm_minus[4] = {
-        -xv[0] * xunit.a,
-        -xv[1] * xunit.a,
-        -xv[2] * xunit.a,
-        -xv[3] * xunit.a };
-        
-      // double const xm_mi_ym[4] = {
-      //   xm[0] - ym[0],
-      //   xm[1] - ym[1],
-      //   xm[2] - ym[2],
-      //   xm[3] - ym[3] };
-      // double const ym_mi_xm[4] = {
-      //   ym[0] - xm[0],
-      //   ym[1] - xm[1],
-      //   ym[2] - xm[2],
-      //   ym[3] - xm[3] };
+      int const xv_old[4] = {
+        coord_map_zerohalf(z[0], global_geom_arr[0]),
+        coord_map_zerohalf(z[1], global_geom_arr[1]),
+        coord_map_zerohalf(z[2], global_geom_arr[2]),
+        coord_map_zerohalf(z[3], global_geom_arr[3])
+      };
 
       int const x_mi_y[4] = {
         (z[0] - y[0] + global_geom_arr[0]) % global_geom_arr[0],
@@ -1146,17 +1127,17 @@ void ker_2p2_wrap(
         (z[2] - y[2] + global_geom_arr[2]) % global_geom_arr[2],
         (z[3] - y[3] + global_geom_arr[2]) % global_geom_arr[3]
       };
-      int xv_mi_yv[4] = {
+      int xv_mi_yv_true[4] = {
         coord_map(x_mi_y[0], global_geom_arr[0]),
         coord_map(x_mi_y[1], global_geom_arr[1]),
         coord_map(x_mi_y[2], global_geom_arr[2]),
         coord_map(x_mi_y[3], global_geom_arr[3]) // NO ZEROHALF!
       };
-      double const xm_mi_ym[4] = {
-        xv_mi_yv[0] * xunit.a,
-        xv_mi_yv[1] * xunit.a,
-        xv_mi_yv[2] * xunit.a,
-        xv_mi_yv[3] * xunit.a
+      int xv_mi_yv_old[4] = {
+        coord_map_zerohalf(x_mi_y[0], global_geom_arr[0]),
+        coord_map_zerohalf(x_mi_y[1], global_geom_arr[1]),
+        coord_map_zerohalf(x_mi_y[2], global_geom_arr[2]),
+        coord_map_zerohalf(x_mi_y[3], global_geom_arr[3])
       };
 
       int const y_mi_x[4] = {
@@ -1165,17 +1146,96 @@ void ker_2p2_wrap(
         (-z[2] + y[2] + global_geom_arr[2]) % global_geom_arr[2],
         (-z[3] + y[3] + global_geom_arr[2]) % global_geom_arr[3]
       };
-      int yv_mi_xv[4] = {
+      int yv_mi_xv_true[4] = {
         coord_map(y_mi_x[0], global_geom_arr[0]),
         coord_map(y_mi_x[1], global_geom_arr[1]),
         coord_map(y_mi_x[2], global_geom_arr[2]),
         coord_map(y_mi_x[3], global_geom_arr[3]) // NO ZEROHALF!
       };
-      double const ym_mi_xm[4] = {
-        yv_mi_xv[0] * xunit.a,
-        yv_mi_xv[1] * xunit.a,
-        yv_mi_xv[2] * xunit.a,
-        yv_mi_xv[3] * xunit.a
+      int yv_mi_xv_old[4] = {
+        coord_map_zerohalf(y_mi_x[0], global_geom_arr[0]),
+        coord_map_zerohalf(y_mi_x[1], global_geom_arr[1]),
+        coord_map_zerohalf(y_mi_x[2], global_geom_arr[2]),
+        coord_map_zerohalf(y_mi_x[3], global_geom_arr[3])
+      };
+
+      if (
+        yv_true[0] == yv_old[0] && yv_true[1] == yv_old[1] && yv_true[2] == yv_old[2] && yv_true[3] == yv_old[3] && 
+        xv_true[0] == xv_old[0] && xv_true[1] == xv_old[1] && xv_true[2] == xv_old[2] && xv_true[3] == xv_old[3] && 
+        xv_mi_yv_true[0] == xv_mi_yv_old[0] && xv_mi_yv_true[1] == xv_mi_yv_old[1] && xv_mi_yv_true[2] == xv_mi_yv_old[2] && xv_mi_yv_true[3] == xv_mi_yv_old[3] && 
+        yv_mi_xv_true[0] == yv_mi_xv_old[0] && yv_mi_xv_true[1] == yv_mi_xv_old[1] && yv_mi_xv_true[2] == yv_mi_xv_old[2] && yv_mi_xv_true[3] == yv_mi_xv_old[3]
+      ) {
+        continue;
+      }
+
+      double const ym_old[4] = {
+        yv_old[0] * xunit.a,
+        yv_old[1] * xunit.a,
+        yv_old[2] * xunit.a,
+        yv_old[3] * xunit.a };
+      double const ym_minus_old[4] = {
+        -yv_old[0] * xunit.a,
+        -yv_old[1] * xunit.a,
+        -yv_old[2] * xunit.a,
+        -yv_old[3] * xunit.a };
+      double const xm_old[4] = {
+        xv_old[0] * xunit.a,
+        xv_old[1] * xunit.a,
+        xv_old[2] * xunit.a,
+        xv_old[3] * xunit.a };
+      double const xm_minus_old[4] = {
+        -xv_old[0] * xunit.a,
+        -xv_old[1] * xunit.a,
+        -xv_old[2] * xunit.a,
+        -xv_old[3] * xunit.a };
+        
+      double const xm_mi_ym_old[4] = {
+        xv_mi_yv_old[0] * xunit.a,
+        xv_mi_yv_old[1] * xunit.a,
+        xv_mi_yv_old[2] * xunit.a,
+        xv_mi_yv_old[3] * xunit.a
+      };
+
+      double const ym_mi_xm_old[4] = {
+        yv_mi_xv_old[0] * xunit.a,
+        yv_mi_xv_old[1] * xunit.a,
+        yv_mi_xv_old[2] * xunit.a,
+        yv_mi_xv_old[3] * xunit.a
+      };
+
+      double const ym_true[4] = {
+        yv_true[0] * xunit.a,
+        yv_true[1] * xunit.a,
+        yv_true[2] * xunit.a,
+        yv_true[3] * xunit.a };
+      double const ym_minus_true[4] = {
+        -yv_true[0] * xunit.a,
+        -yv_true[1] * xunit.a,
+        -yv_true[2] * xunit.a,
+        -yv_true[3] * xunit.a };
+      double const xm_true[4] = {
+        xv_true[0] * xunit.a,
+        xv_true[1] * xunit.a,
+        xv_true[2] * xunit.a,
+        xv_true[3] * xunit.a };
+      double const xm_minus_true[4] = {
+        -xv_true[0] * xunit.a,
+        -xv_true[1] * xunit.a,
+        -xv_true[2] * xunit.a,
+        -xv_true[3] * xunit.a };
+        
+      double const xm_mi_ym_true[4] = {
+        xv_mi_yv_true[0] * xunit.a,
+        xv_mi_yv_true[1] * xunit.a,
+        xv_mi_yv_true[2] * xunit.a,
+        xv_mi_yv_true[3] * xunit.a
+      };
+
+      double const ym_mi_xm_true[4] = {
+        yv_mi_xv_true[0] * xunit.a,
+        yv_mi_xv_true[1] * xunit.a,
+        yv_mi_xv_true[2] * xunit.a,
+        yv_mi_xv_true[3] * xunit.a
       };
 
       for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
@@ -1184,7 +1244,7 @@ void ker_2p2_wrap(
         double local_P3[4][4][4] = { 0 };
         double local_P4_0[4][4][4] = { 0 };
         double local_P4_1[4][4][4] = { 0 };
-        KQED_LX( ikernel, xm, ym, kqed_t, kerv );
+        KQED_LX( ikernel, xm_old, ym_old, kqed_t, kerv );
         for( int k = 0; k < 6; k++ ) {
           int const rho = idx_comb.comb[k][0];
           int const sigma = idx_comb.comb[k][1];
@@ -1197,7 +1257,20 @@ void ker_2p2_wrap(
             }
           }
         }
-        KQED_LX( ikernel, ym, xm, kqed_t, kerv );
+        KQED_LX( ikernel, xm_true, ym_true, kqed_t, kerv );
+        for( int k = 0; k < 6; k++ ) {
+          int const rho = idx_comb.comb[k][0];
+          int const sigma = idx_comb.comb[k][1];
+          for ( int nu = 0; nu < 4; nu++ ) {
+            local_P2_0[rho][sigma][nu] = 0.0;
+            for ( int mu = 0; mu < 4; mu++ ) {
+              for ( int lambda = 0; lambda < 4; lambda++ ) {
+                local_P2_0[rho][sigma][nu] -= kerv[k][mu][nu][lambda] * pimn[mu][lambda];
+              }
+            }
+          }
+        }
+        KQED_LX( ikernel, ym_old, xm_old, kqed_t, kerv );
         for( int k = 0; k < 6; k++ ) {
           int const rho = idx_comb.comb[k][0];
           int const sigma = idx_comb.comb[k][1];
@@ -1210,7 +1283,20 @@ void ker_2p2_wrap(
             }
           }
         }
-        KQED_LX( ikernel, xm_mi_ym, ym_minus, kqed_t, kerv );
+        KQED_LX( ikernel, ym_true, xm_true, kqed_t, kerv );
+        for( int k = 0; k < 6; k++ ) {
+          int const rho = idx_comb.comb[k][0];
+          int const sigma = idx_comb.comb[k][1];
+          for ( int nu = 0; nu < 4; nu++ ) {
+            local_P2_1[rho][sigma][nu] = 0.0;
+            for ( int mu = 0; mu < 4; mu++ ) {
+              for ( int lambda = 0; lambda < 4; lambda++ ) {
+                local_P2_1[rho][sigma][nu] -= kerv[k][nu][mu][lambda] * pimn[mu][lambda];
+              }
+            }
+          }
+        }
+        KQED_LX( ikernel, xm_mi_ym_old, ym_minus_old, kqed_t, kerv );
         for( int k = 0; k < 6; k++ ) {
           int const rho = idx_comb.comb[k][0];
           int const sigma = idx_comb.comb[k][1];
@@ -1223,7 +1309,20 @@ void ker_2p2_wrap(
             }
           }
         }
-        KQED_LX( ikernel, ym_mi_xm, xm_minus, kqed_t, kerv );
+        KQED_LX( ikernel, xm_mi_ym_true, ym_minus_true, kqed_t, kerv );
+        for( int k = 0; k < 6; k++ ) {
+          int const rho = idx_comb.comb[k][0];
+          int const sigma = idx_comb.comb[k][1];
+          for ( int nu = 0; nu < 4; nu++ ) {
+            local_P3[rho][sigma][nu] = 0.0;
+            for ( int mu = 0; mu < 4; mu++ ) {
+              for ( int lambda = 0; lambda < 4; lambda++ ) {
+                local_P3[rho][sigma][nu] -= kerv[k][mu][lambda][nu] * pimn[mu][lambda];
+              }
+            }
+          }
+        }
+        KQED_LX( ikernel, ym_mi_xm_old, xm_minus_old, kqed_t, kerv );
         for( int k = 0; k < 6; k++ ) {
           int const rho = idx_comb.comb[k][0];
           int const sigma = idx_comb.comb[k][1];
@@ -1234,8 +1333,26 @@ void ker_2p2_wrap(
                 local_P4_0[rho][sigma][nu] += kerv[k][nu][lambda][mu] * pimn[mu][lambda];
               }
             }
-            local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (xv[rho]);
-            local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (xv[sigma]);
+            local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (xv_old[rho]);
+            local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (xv_old[sigma]);
+            // old P4_1
+            // local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (yv[rho]-xv[rho]);
+            // local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (yv[sigma]-xv[sigma]);
+          }
+        }
+        KQED_LX( ikernel, ym_mi_xm_true, xm_minus_true, kqed_t, kerv );
+        for( int k = 0; k < 6; k++ ) {
+          int const rho = idx_comb.comb[k][0];
+          int const sigma = idx_comb.comb[k][1];
+          for ( int nu = 0; nu < 4; nu++ ) {
+            local_P4_0[rho][sigma][nu] = 0.0;
+            for ( int mu = 0; mu < 4; mu++ ) {
+              for ( int lambda = 0; lambda < 4; lambda++ ) {
+                local_P4_0[rho][sigma][nu] -= kerv[k][nu][lambda][mu] * pimn[mu][lambda];
+              }
+            }
+            local_P4_1[rho][sigma][nu] -= local_P4_0[rho][sigma][nu] * (xv_true[rho]);
+            local_P4_1[sigma][rho][nu] -= -local_P4_0[rho][sigma][nu] * (xv_true[sigma]);
             // old P4_1
             // local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (yv[rho]-xv[rho]);
             // local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (yv[sigma]-xv[sigma]);

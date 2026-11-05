@@ -1113,21 +1113,6 @@ inline void compute_2p2_wrap(
     }
   }
 
-#if 0
-  /***********************************************************
-   * output
-   ***********************************************************/
-  char output_filename[400], type[200];
-  sprintf ( output_filename, "%s.%d.T%d_X%d_Y%d_Z%d.lime", g_outfile_prefix, Nconf, gsw[0], gsw[1], gsw[2], gsw[3] );
-  sprintf ( type, "polarization-tensor-position-space" );
-
-  int exitstatus = write_lime_contraction ( pimn[0][0], output_filename, 64, 8, type, Nconf,  0);
-  if ( exitstatus != 0 )
-  {
-    fprintf ( stderr, "# [hlbl_2p2_invert_contract] Error from write_lime_contraction, status %d   %s %d\n", exitstatus, __FILE__, __LINE__ );
-    EXIT(12);
-  }
-#endif
   
 
 #if _WITH_TIMER
@@ -1152,25 +1137,26 @@ inline void compute_2p2_wrap(
     exit ( 57 );
   }
   memset((void*)local_P1[0][0][0], 0, sizeof(double)*n_P1);
-  for ( int sigma = 0; sigma < 4; sigma++ )
-  {
-    for ( int nu = 0; nu < 4; nu++ )
-    {
-      // TODO: Parallelize over non-summed coordinate?
-      for ( unsigned int iz = 0; iz < VOLUME; iz++ )
-      {
-        int const z[4] = {
-          ( g_lexic2coords[iz][0] + g_proc_coords[0] * T  - gsw[0] + T_global  ) % T_global,
-          ( g_lexic2coords[iz][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
-          ( g_lexic2coords[iz][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
-          ( g_lexic2coords[iz][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global };
-        for ( int rho = 0; rho < 4; rho++ )
-        {
-          local_P1[rho][sigma][nu][z[rho]] += pimn[sigma][nu][iz];
-        }
-      }
-    }
-  }
+  // for ( int sigma = 0; sigma < 4; sigma++ )
+  // {
+  //   for ( int nu = 0; nu < 4; nu++ )
+  //   {
+  //     // TODO: Parallelize over non-summed coordinate?
+  //     for ( unsigned int iz = 0; iz < VOLUME; iz++ )
+  //     {
+  //       int const z[4] = {
+  //         ( g_lexic2coords[iz][0] + g_proc_coords[0] * T  - gsw[0] + T_global  ) % T_global,
+  //         ( g_lexic2coords[iz][1] + g_proc_coords[1] * LX - gsw[1] + LX_global ) % LX_global,
+  //         ( g_lexic2coords[iz][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
+  //         ( g_lexic2coords[iz][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global };
+  //       for ( int rho = 0; rho < 4; rho++ )
+  //       {
+  //         local_P1[rho][sigma][nu][z[rho]] += pimn[sigma][nu][iz];
+  //       }
+  //     }
+  //   }
+  // } 
+  // // // Don't have to touch P1 because it is currently assumed to be correct
 
 #ifdef HAVE_MPI
   // TODO: just MPI_Reduce?
@@ -1215,10 +1201,14 @@ inline void compute_2p2_wrap(
 #endif
   for ( int yi = 0; yi < n_y; yi++ )
   {
-    double kerv1[6][4][4][4] KQED_ALIGN ;
-    double kerv2[6][4][4][4] KQED_ALIGN ;
-    double kerv3[6][4][4][4] KQED_ALIGN ;
-    double kerv4[6][4][4][4] KQED_ALIGN ;
+    double kerv1_old[6][4][4][4] KQED_ALIGN ;
+    double kerv1_true[6][4][4][4] KQED_ALIGN ;
+    double kerv2_old[6][4][4][4] KQED_ALIGN ;
+    double kerv2_true[6][4][4][4] KQED_ALIGN ;
+    double kerv3_old[6][4][4][4] KQED_ALIGN ;
+    double kerv3_true[6][4][4][4] KQED_ALIGN ;
+    double kerv4_old[6][4][4][4] KQED_ALIGN ;
+    double kerv4_true[6][4][4][4] KQED_ALIGN ;
 
     // For P2: y = (gsy - gsw)
     // For P3: y' = (gsw - gsy)
@@ -1230,8 +1220,11 @@ inline void compute_2p2_wrap(
       ( gsy[2] - gsw[2] + LY_global ) % LY_global,
       ( gsy[3] - gsw[3] + LZ_global ) % LZ_global
     };
-    int yv[4];
-    site_map ( yv, y ); // NO ZEROHALF!
+    int yv_true[4];
+    site_map ( yv_true, y ); // NO ZEROHALF!
+    int yv_old[4];
+    site_map_zerohalf ( yv_old, y );
+
     for ( unsigned int ix = 0; ix < VOLUME; ix++ )
     {
       int const x[4] = {
@@ -1240,77 +1233,123 @@ inline void compute_2p2_wrap(
         ( g_lexic2coords[ix][2] + g_proc_coords[2] * LY - gsw[2] + LY_global ) % LY_global,
         ( g_lexic2coords[ix][3] + g_proc_coords[3] * LZ - gsw[3] + LZ_global ) % LZ_global };
 
-      int xv[4];
-      site_map ( xv, x ); // NO ZEROHALF!
-
-      double const xm[4] = {
-        xv[0] * xunit[0],
-        xv[1] * xunit[0],
-        xv[2] * xunit[0],
-        xv[3] * xunit[0] };
-
-      double const xm_minus[4] = {
-        -xv[0] * xunit[0],
-        -xv[1] * xunit[0],
-        -xv[2] * xunit[0],
-        -xv[3] * xunit[0] };
-
-      double const ym[4] = {
-        yv[0] * xunit[0],
-        yv[1] * xunit[0],
-        yv[2] * xunit[0],
-        yv[3] * xunit[0] };
-
-      double const ym_minus[4] = {
-        -yv[0] * xunit[0],
-        -yv[1] * xunit[0],
-        -yv[2] * xunit[0],
-        -yv[3] * xunit[0] };
-
-      // double const xm_mi_ym[4] = {
-      //   xm[0] - ym[0],
-      //   xm[1] - ym[1],
-      //   xm[2] - ym[2],
-      //   xm[3] - ym[3] };
-      // double const ym_mi_xm[4] = {
-      //   ym[0] - xm[0],
-      //   ym[1] - xm[1],
-      //   ym[2] - xm[2],
-      //   ym[3] - xm[3] };
+      int xv_true[4];
+      site_map ( xv_true, x ); // NO ZEROHALF!
+      int xv_old[4];
+      site_map_zerohalf ( xv_old, x );
 
       int const x_mi_y[4] = {
         (x[0] - y[0] + T_global) % T_global,
         (x[1] - y[1] + LX_global) % LX_global,
         (x[2] - y[2] + LY_global) % LY_global,
         (x[3] - y[3] + LZ_global) % LZ_global };
-      int xv_mi_yv[4];
-      site_map(xv_mi_yv, x_mi_y); // NO ZEROHALF!
-      double const xm_mi_ym[4] = {
-        xv_mi_yv[0] * xunit[0],
-        xv_mi_yv[1] * xunit[0],
-        xv_mi_yv[2] * xunit[0],
-        xv_mi_yv[3] * xunit[0] };
+      int xv_mi_yv_true[4];
+      site_map(xv_mi_yv_true, x_mi_y); // NO ZEROHALF!
+      int xv_mi_yv_old[4];
+      site_map_zerohalf(xv_mi_yv_old, x_mi_y);
 
       int const y_mi_x[4] = {
         (-x[0] + y[0] + T_global) % T_global,
         (-x[1] + y[1] + LX_global) % LX_global,
         (-x[2] + y[2] + LY_global) % LY_global,
         (-x[3] + y[3] + LZ_global) % LZ_global };
-      int yv_mi_xv[4];
-      site_map(yv_mi_xv, y_mi_x); // NO ZEROHALF!
-      double const ym_mi_xm[4] = {
-        yv_mi_xv[0] * xunit[0],
-        yv_mi_xv[1] * xunit[0],
-        yv_mi_xv[2] * xunit[0],
-        yv_mi_xv[3] * xunit[0] };
+      int yv_mi_xv_true[4];
+      site_map(yv_mi_xv_true, y_mi_x); // NO ZEROHALF!
+      int yv_mi_xv_old[4];
+      site_map_zerohalf(yv_mi_xv_old, y_mi_x);
+
+      if (
+        yv_true[0] == yv_old[0] && yv_true[1] == yv_old[1] && yv_true[2] == yv_old[2] && yv_true[3] == yv_old[3] && 
+        xv_true[0] == xv_old[0] && xv_true[1] == xv_old[1] && xv_true[2] == xv_old[2] && xv_true[3] == xv_old[3] && 
+        xv_mi_yv_true[0] == xv_mi_yv_old[0] && xv_mi_yv_true[1] == xv_mi_yv_old[1] && xv_mi_yv_true[2] == xv_mi_yv_old[2] && xv_mi_yv_true[3] == xv_mi_yv_old[3] && 
+        yv_mi_xv_true[0] == yv_mi_xv_old[0] && yv_mi_xv_true[1] == yv_mi_xv_old[1] && yv_mi_xv_true[2] == yv_mi_xv_old[2] && yv_mi_xv_true[3] == yv_mi_xv_old[3]
+      ) {
+        continue;
+      }
+
+      double const xm_old[4] = {
+        xv_old[0] * xunit[0],
+        xv_old[1] * xunit[0],
+        xv_old[2] * xunit[0],
+        xv_old[3] * xunit[0] };
+
+      double const xm_minus_old[4] = {
+        -xv_old[0] * xunit[0],
+        -xv_old[1] * xunit[0],
+        -xv_old[2] * xunit[0],
+        -xv_old[3] * xunit[0] };
+
+      double const ym_old[4] = {
+        yv_old[0] * xunit[0],
+        yv_old[1] * xunit[0],
+        yv_old[2] * xunit[0],
+        yv_old[3] * xunit[0] };
+
+      double const ym_minus_old[4] = {
+        -yv_old[0] * xunit[0],
+        -yv_old[1] * xunit[0],
+        -yv_old[2] * xunit[0],
+        -yv_old[3] * xunit[0] };
+
+      double const xm_mi_ym_old[4] = {
+        xv_mi_yv_old[0] * xunit[0],
+        xv_mi_yv_old[1] * xunit[0],
+        xv_mi_yv_old[2] * xunit[0],
+        xv_mi_yv_old[3] * xunit[0] };
+
+      double const ym_mi_xm_old[4] = {
+        yv_mi_xv_old[0] * xunit[0],
+        yv_mi_xv_old[1] * xunit[0],
+        yv_mi_xv_old[2] * xunit[0],
+        yv_mi_xv_old[3] * xunit[0] };
+
+      double const xm_true[4] = {
+        xv_true[0] * xunit[0],
+        xv_true[1] * xunit[0],
+        xv_true[2] * xunit[0],
+        xv_true[3] * xunit[0] };
+
+      double const xm_minus_true[4] = {
+        -xv_true[0] * xunit[0],
+        -xv_true[1] * xunit[0],
+        -xv_true[2] * xunit[0],
+        -xv_true[3] * xunit[0] };
+
+      double const ym_true[4] = {
+        yv_true[0] * xunit[0],
+        yv_true[1] * xunit[0],
+        yv_true[2] * xunit[0],
+        yv_true[3] * xunit[0] };
+
+      double const ym_minus_true[4] = {
+        -yv_true[0] * xunit[0],
+        -yv_true[1] * xunit[0],
+        -yv_true[2] * xunit[0],
+        -yv_true[3] * xunit[0] };
+
+      double const xm_mi_ym_true[4] = {
+        xv_mi_yv_true[0] * xunit[0],
+        xv_mi_yv_true[1] * xunit[0],
+        xv_mi_yv_true[2] * xunit[0],
+        xv_mi_yv_true[3] * xunit[0] };
+
+      double const ym_mi_xm_true[4] = {
+        yv_mi_xv_true[0] * xunit[0],
+        yv_mi_xv_true[1] * xunit[0],
+        yv_mi_xv_true[2] * xunit[0],
+        yv_mi_xv_true[3] * xunit[0] };
 
 
       for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
       {
-        KQED_LX[ikernel]( xm, ym,             kqed_t, kerv1 );
-        KQED_LX[ikernel]( ym, xm,             kqed_t, kerv2 );
-        KQED_LX[ikernel]( xm_mi_ym, ym_minus, kqed_t, kerv3 );
-        KQED_LX[ikernel]( ym_mi_xm, xm_minus, kqed_t, kerv4 );
+        KQED_LX[ikernel]( xm_old, ym_old,             kqed_t, kerv1_old );
+        KQED_LX[ikernel]( xm_true, ym_true,             kqed_t, kerv1_true );
+        KQED_LX[ikernel]( ym_old, xm_old,             kqed_t, kerv2_old );
+        KQED_LX[ikernel]( ym_true, xm_true,             kqed_t, kerv2_true );
+        KQED_LX[ikernel]( xm_mi_ym_old, ym_minus_old, kqed_t, kerv3_old );
+        KQED_LX[ikernel]( xm_mi_ym_true, ym_minus_true, kqed_t, kerv3_true );
+        KQED_LX[ikernel]( ym_mi_xm_old, xm_minus_old, kqed_t, kerv4_old );
+        KQED_LX[ikernel]( ym_mi_xm_true, xm_minus_true, kqed_t, kerv4_true );
         for( int k = 0; k < 6; k++ )
         {
           int const rho   = idx_comb[k][0];
@@ -1326,21 +1365,39 @@ inline void compute_2p2_wrap(
               {
                 // P2_0
                 local_P23x[yi][ikernel*kernel_n_geom + 0][rho][sigma][nu] +=
-                    kerv1[k][mu][nu][lambda] * pimn[mu][lambda][ix];
+                    kerv1_old[k][mu][nu][lambda] * pimn[mu][lambda][ix];
                 // P2_1
                 local_P23x[yi][ikernel*kernel_n_geom + 1][rho][sigma][nu] +=
-                    kerv2[k][nu][mu][lambda] * pimn[mu][lambda][ix];
+                    kerv2_old[k][nu][mu][lambda] * pimn[mu][lambda][ix];
                 // P3
                 local_P23x[yi][ikernel*kernel_n_geom + 2][rho][sigma][nu] +=
-                    kerv3[k][mu][lambda][nu] * pimn[mu][lambda][ix];
+                    kerv3_old[k][mu][lambda][nu] * pimn[mu][lambda][ix];
                 // P4_0
                 local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu] +=
-                    kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                    kerv4_old[k][nu][lambda][mu] * pimn[mu][lambda][ix];
                 // P4_1
                 local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] +=
-                   (xv[rho]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                   (xv_old[rho]) * kerv4_old[k][nu][lambda][mu] * pimn[mu][lambda][ix];
                 local_P23x[yi][ikernel*kernel_n_geom + 4][sigma][rho][nu] -=
-                   (xv[sigma]) * kerv4[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                   (xv_old[sigma]) * kerv4_old[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+
+                // P2_0
+                local_P23x[yi][ikernel*kernel_n_geom + 0][rho][sigma][nu] -=
+                    kerv1_true[k][mu][nu][lambda] * pimn[mu][lambda][ix];
+                // P2_1
+                local_P23x[yi][ikernel*kernel_n_geom + 1][rho][sigma][nu] -=
+                    kerv2_true[k][nu][mu][lambda] * pimn[mu][lambda][ix];
+                // P3
+                local_P23x[yi][ikernel*kernel_n_geom + 2][rho][sigma][nu] -=
+                    kerv3_true[k][mu][lambda][nu] * pimn[mu][lambda][ix];
+                // P4_0
+                local_P23x[yi][ikernel*kernel_n_geom + 3][rho][sigma][nu] -=
+                    kerv4_true[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                // P4_1
+                local_P23x[yi][ikernel*kernel_n_geom + 4][rho][sigma][nu] -=
+                   (xv_true[rho]) * kerv4_true[k][nu][lambda][mu] * pimn[mu][lambda][ix];
+                local_P23x[yi][ikernel*kernel_n_geom + 4][sigma][rho][nu] +=
+                   (xv_true[sigma]) * kerv4_true[k][nu][lambda][mu] * pimn[mu][lambda][ix];
               }
             }
             // // P4_1 (old and wrong I think)
