@@ -430,7 +430,7 @@ inline void compute_2p2_wrap(
 #if _WITH_TIMER
   checkCudaErrors(cudaDeviceSynchronize());
   gettimeofday ( &tb2, (struct timezone *)NULL );
-  show_time ( &ta2, &tb2, "hlbl_mII_invert_contract", "2+2 pieces kernel", io_proc == 2 );
+  show_time ( &ta2, &tb2, "hlbl_mII_invert_contract", "2+2 wrap pieces kernel", io_proc == 2 );
 #endif
 
 
@@ -487,12 +487,12 @@ inline void compute_2p2_wrap(
 
   if ( g_cart_id == 0 )
   {
-    fprintf ( stdout, "[hlbl_mII_invert_contract] Finished 2+2 pieces for n_y = %d other y points\n", n_y );
+    fprintf ( stdout, "[hlbl_mII_invert_contract] Finished 2+2 wrap pieces for n_y = %d other y points\n", n_y );
   }
 
 #if _WITH_TIMER
   gettimeofday ( &tb, (struct timezone *)NULL );
-  show_time ( &ta, &tb, "hlbl_mII_invert_contract", "2+2 pieces", io_proc == 2 );
+  show_time ( &ta, &tb, "hlbl_mII_invert_contract", "2+2 wrap pieces", io_proc == 2 );
 #endif
 }
 
@@ -1439,7 +1439,7 @@ inline void compute_2p2_wrap(
 
 #if _WITH_TIMER
   gettimeofday ( &tb, (struct timezone *)NULL );
-  show_time ( &ta, &tb, "hlbl_mII_invert_contract", "2+2 pieces (P2-P3)", io_proc == 2 );
+  show_time ( &ta, &tb, "hlbl_mII_invert_contract", "2+2 wrap pieces (P2-P3)", io_proc == 2 );
 #endif
 
   fini_twopt ( &pimn );
@@ -3014,6 +3014,11 @@ int main(int argc, char **argv) {
         {
           kernel_sum[ikernel][iflavor][iy] = local_kernel_sum[ikernel];
         }
+#if _WITH_TIMER
+        gettimeofday ( &tb, (struct timezone *)NULL );
+        show_time ( &ta, &tb, "hlbl_mII_invert_contract", "kernel-sum", io_proc == 2 );
+        gettimeofday ( &ta, (struct timezone *)NULL );
+#endif
 
         double local_kernel_sum_wrap[kernel_n] = { 0 };
         compute_4pt_wrap(
@@ -3026,7 +3031,7 @@ int main(int argc, char **argv) {
 
 #if _WITH_TIMER
         gettimeofday ( &tb, (struct timezone *)NULL );
-        show_time ( &ta, &tb, "hlbl_mII_invert_contract", "kernel-sum", io_proc == 2 );
+        show_time ( &ta, &tb, "hlbl_mII_invert_contract", "kernel-sum wrap", io_proc == 2 );
 #endif
 
         /***********************************************************
