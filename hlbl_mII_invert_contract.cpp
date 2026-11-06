@@ -377,10 +377,13 @@ inline void compute_2p2_wrap(
     const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
     unsigned VOLUME, int Nconf) {
 
-  struct timeval ta, tb, ta2, tb2;
+  struct timeval ta, tb, ta2, tb2, tbefore, tafter;
   
 #if _WITH_TIMER
   gettimeofday ( &ta, (struct timezone *)NULL );
+#endif
+#if _WITH_TIMER
+  gettimeofday ( &tbefore, (struct timezone *)NULL );
 #endif
 
   double* d_P1 = NULL;
@@ -418,6 +421,11 @@ inline void compute_2p2_wrap(
   checkCudaErrors(cudaMemcpy(
       (void*)d_gycoords, (const void*)gycoords_structs, n_y*sizeof(Coord), cudaMemcpyHostToDevice));
   free(gycoords_structs);
+#if _WITH_TIMER
+  gettimeofday ( &tafter, (struct timezone *)NULL );
+  show_time ( &tbefore, &tafter, "hlbl_mII_invert_contract", "2+2 wrap pieces before cuda kernel call", io_proc == 2 );
+#endif
+
 
 #if _WITH_TIMER
   gettimeofday ( &ta2, (struct timezone *)NULL );
@@ -431,6 +439,10 @@ inline void compute_2p2_wrap(
   checkCudaErrors(cudaDeviceSynchronize());
   gettimeofday ( &tb2, (struct timezone *)NULL );
   show_time ( &ta2, &tb2, "hlbl_mII_invert_contract", "2+2 wrap pieces kernel", io_proc == 2 );
+#endif
+
+#if _WITH_TIMER
+  gettimeofday ( &tbefore, (struct timezone *)NULL );
 #endif
 
 
@@ -490,6 +502,10 @@ inline void compute_2p2_wrap(
     fprintf ( stdout, "[hlbl_mII_invert_contract] Finished 2+2 wrap pieces for n_y = %d other y points\n", n_y );
   }
 
+#if _WITH_TIMER
+  gettimeofday ( &tafter, (struct timezone *)NULL );
+  show_time ( &tbefore, &tafter, "hlbl_mII_invert_contract", "2+2 wrap pieces after cuda kernel call", io_proc == 2 );
+#endif
 #if _WITH_TIMER
   gettimeofday ( &tb, (struct timezone *)NULL );
   show_time ( &ta, &tb, "hlbl_mII_invert_contract", "2+2 wrap pieces", io_proc == 2 );
