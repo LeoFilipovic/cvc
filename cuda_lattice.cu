@@ -1262,7 +1262,6 @@ void ker_2p2_wrap(
           int const rho = idx_comb.comb[k][0];
           int const sigma = idx_comb.comb[k][1];
           for ( int nu = 0; nu < 4; nu++ ) {
-            local_P2_0[rho][sigma][nu] = 0.0;
             for ( int mu = 0; mu < 4; mu++ ) {
               for ( int lambda = 0; lambda < 4; lambda++ ) {
                 local_P2_0[rho][sigma][nu] -= kerv[k][mu][nu][lambda] * pimn[mu][lambda];
@@ -1288,7 +1287,6 @@ void ker_2p2_wrap(
           int const rho = idx_comb.comb[k][0];
           int const sigma = idx_comb.comb[k][1];
           for ( int nu = 0; nu < 4; nu++ ) {
-            local_P2_1[rho][sigma][nu] = 0.0;
             for ( int mu = 0; mu < 4; mu++ ) {
               for ( int lambda = 0; lambda < 4; lambda++ ) {
                 local_P2_1[rho][sigma][nu] -= kerv[k][nu][mu][lambda] * pimn[mu][lambda];
@@ -1314,7 +1312,6 @@ void ker_2p2_wrap(
           int const rho = idx_comb.comb[k][0];
           int const sigma = idx_comb.comb[k][1];
           for ( int nu = 0; nu < 4; nu++ ) {
-            local_P3[rho][sigma][nu] = 0.0;
             for ( int mu = 0; mu < 4; mu++ ) {
               for ( int lambda = 0; lambda < 4; lambda++ ) {
                 local_P3[rho][sigma][nu] -= kerv[k][mu][lambda][nu] * pimn[mu][lambda];
@@ -1345,7 +1342,6 @@ void ker_2p2_wrap(
           int const rho = idx_comb.comb[k][0];
           int const sigma = idx_comb.comb[k][1];
           for ( int nu = 0; nu < 4; nu++ ) {
-            local_P4_0[rho][sigma][nu] = 0.0;
             for ( int mu = 0; mu < 4; mu++ ) {
               for ( int lambda = 0; lambda < 4; lambda++ ) {
                 local_P4_0[rho][sigma][nu] -= kerv[k][nu][lambda][mu] * pimn[mu][lambda];
