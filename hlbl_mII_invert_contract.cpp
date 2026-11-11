@@ -68,6 +68,7 @@ extern "C"
 #define _OP_ID_DN 1
 
 #define _WITH_TIMER 1
+#define DO_WRAP_CHECK 1
 
 using namespace cvc;
 
@@ -323,7 +324,9 @@ inline void compute_2p2_pieces(
   checkCudaErrors(cudaMemcpy(
       (void*)local_P23x, (const void*)d_P23x, sizeof_P23x, cudaMemcpyDeviceToHost));
 
+
 #ifdef HAVE_MPI
+
   // TODO: just MPI_Reduce?
   if ( MPI_Allreduce(local_P1, P1[iflavor][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
@@ -377,7 +380,7 @@ inline void compute_2p2_wrap(
     const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
     unsigned VOLUME, int Nconf) {
 
-  struct timeval ta, tb, ta2, tb2, tbefore, tafter;
+  struct timeval ta, tb, ta2, tb2, tbefore, tafter, tsmalla, tsmallb ;
   
 #if _WITH_TIMER
   gettimeofday ( &ta, (struct timezone *)NULL );
@@ -432,47 +435,80 @@ inline void compute_2p2_wrap(
 #endif
 
   cu_2p2_wrap(
+  // cu_2p2_pieces(
       d_P1, d_P23x, fwd_y, iflavor, d_proc_coords, d_gsw, n_y, d_gycoords,
       d_xunit, kqed_t, global_geom, local_geom);
+    
+  checkCudaErrors(cudaDeviceSynchronize());
+  MPI_Barrier(g_cart_grid);
 
 #if _WITH_TIMER
-  checkCudaErrors(cudaDeviceSynchronize());
+
   gettimeofday ( &tb2, (struct timezone *)NULL );
   show_time ( &ta2, &tb2, "hlbl_mII_invert_contract", "2+2 wrap pieces kernel", io_proc == 2 );
 #endif
 
 #if _WITH_TIMER
   gettimeofday ( &tbefore, (struct timezone *)NULL );
+  gettimeofday ( &tsmalla, (struct timezone *)NULL );
 #endif
 
 
-  double* local_P1 = (double*)malloc(sizeof_P1);
+  // double* local_P1 = (double*)malloc(sizeof_P1);
   double* local_P23x = (double*)malloc(sizeof_P23x);
   double ***** all_P23x = init_5level_dtable ( n_y, kernel_n*kernel_n_geom, 4, 4, 4 );
-  if ( local_P1 == NULL || local_P23x == NULL || all_P23x == NULL )
+  if (local_P23x == NULL || all_P23x == NULL )
   {
     fprintf ( stderr, "Error alloc local_P1,23x or all_P23x\n" );
     exit ( 57 );
   }
-  
-  checkCudaErrors(cudaMemcpy(
-      (void*)local_P1, (const void*)d_P1, sizeof_P1, cudaMemcpyDeviceToHost));
+#if _WITH_TIMER
+  gettimeofday ( &tsmallb, (struct timezone *)NULL );
+  show_time ( &tsmalla, &tsmallb, "hlbl_mII_invert_contract", "2+2 wrap pieces malloc local_P1, local_P23x", io_proc == 2 );
+  gettimeofday ( &tsmalla, (struct timezone *)NULL );
+#endif
+
+  // checkCudaErrors(cudaMemcpy(
+  //     (void*)local_P1, (const void*)d_P1, sizeof_P1, cudaMemcpyDeviceToHost));
   checkCudaErrors(cudaMemcpy(
       (void*)local_P23x, (const void*)d_P23x, sizeof_P23x, cudaMemcpyDeviceToHost));
 
+  checkCudaErrors(cudaDeviceSynchronize());
+#if _WITH_TIMER
+  gettimeofday ( &tsmallb, (struct timezone *)NULL );
+  show_time ( &tsmalla, &tsmallb, "hlbl_mII_invert_contract", "2+2 wrap pieces cudaMemcpy into local_P1, local_P23x", io_proc == 2 );
+  gettimeofday ( &tsmalla, (struct timezone *)NULL );
+#endif
+
 #ifdef HAVE_MPI
   // TODO: just MPI_Reduce?
-  if ( MPI_Allreduce(local_P1, P1[iflavor][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
-       != MPI_SUCCESS ) {
-    if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
-  }
+  // if ( MPI_Allreduce(local_P1, P1[iflavor][0][0][0], n_P1, MPI_DOUBLE, MPI_SUM, g_cart_grid)
+  //      != MPI_SUCCESS ) {
+  //   if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
+  // }
+#if _WITH_TIMER
+  gettimeofday ( &tsmallb, (struct timezone *)NULL );
+  show_time ( &tsmalla, &tsmallb, "hlbl_mII_invert_contract", "2+2 wrap pieces MPI_Allreduce into P1", io_proc == 2 );
+  gettimeofday ( &tsmalla, (struct timezone *)NULL );
+#endif
   if ( MPI_Allreduce(local_P23x, all_P23x[0][0][0][0], n_P23x, MPI_DOUBLE, MPI_SUM, g_cart_grid)
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
 #else
-  memcpy((void*)P1[iflavor][0][0][0], (void*)local_P1, sizeof_P1);
+  // memcpy((void*)P1[iflavor][0][0][0], (void*)local_P1, sizeof_P1);
+#if _WITH_TIMER
+  gettimeofday ( &tsmallb, (struct timezone *)NULL );
+  show_time ( &tsmalla, &tsmallb, "hlbl_mII_invert_contract", "2+2 wrap pieces MPI_Allreduce into P1", io_proc == 2 );
+  gettimeofday ( &tsmalla, (struct timezone *)NULL );
+#endif
   memcpy((void*)all_P23x[0][0][0][0], (void*)local_P23x, sizeof_P23x);
+#endif
+
+#if _WITH_TIMER
+  gettimeofday ( &tsmallb, (struct timezone *)NULL );
+  show_time ( &tsmalla, &tsmallb, "hlbl_mII_invert_contract", "2+2 wrap pieces MPI_Allreduce into all_P23x", io_proc == 2 );
+  gettimeofday ( &tsmalla, (struct timezone *)NULL );
 #endif
 
   // interleave data into output array
@@ -489,7 +525,13 @@ inline void compute_2p2_wrap(
     }
   }
 
-  free(local_P1);
+#if _WITH_TIMER
+  gettimeofday ( &tsmallb, (struct timezone *)NULL );
+  show_time ( &tsmalla, &tsmallb, "hlbl_mII_invert_contract", "2+2 wrap pieces memcpy into P23x", io_proc == 2 );
+  gettimeofday ( &tsmalla, (struct timezone *)NULL );
+#endif
+
+  // free(local_P1);
   free(local_P23x);
   fini_5level_dtable ( &all_P23x );
 
@@ -501,6 +543,11 @@ inline void compute_2p2_wrap(
   {
     fprintf ( stdout, "[hlbl_mII_invert_contract] Finished 2+2 wrap pieces for n_y = %d other y points\n", n_y );
   }
+#if _WITH_TIMER
+  gettimeofday ( &tsmallb, (struct timezone *)NULL );
+  show_time ( &tsmalla, &tsmallb, "hlbl_mII_invert_contract", "2+2 wrap pieces freeing locals", io_proc == 2 );
+  gettimeofday ( &tsmalla, (struct timezone *)NULL );
+#endif
 
 #if _WITH_TIMER
   gettimeofday ( &tafter, (struct timezone *)NULL );
@@ -2854,16 +2901,12 @@ int main(int argc, char **argv) {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
           EXIT(123);
         }
-        P23x_wrap = init_6level_dtable ( n_yp, kernel_n*kernel_n_geom, 2, 4, 4, 4 );
 
         /**********************************************************
          * compute P1, P2, P3, ...
          **********************************************************/
         compute_2p2_pieces(
             fwd_y, P1, P23x, gsy, iflavor, io_proc, n_yp, gyp,
-            xunit, spinor_work, kqed_t, VOLUME, Nconf);
-        compute_2p2_wrap(
-            fwd_y, P1_wrap, P23x_wrap, gsy, iflavor, io_proc, n_yp, gyp,
             xunit, spinor_work, kqed_t, VOLUME, Nconf);
         /**********************************************************
          * write P1, P2, P3, ...
@@ -2876,14 +2919,6 @@ int main(int argc, char **argv) {
           sprintf (key, "/P1/t%dx%dy%dz%d", gsy[0], gsy[1], gsy[2], gsy[3] );
 
           exitstatus = write_h5_contraction ( P1[0][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
-          if ( exitstatus != 0 )
-          {
-            fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
-            EXIT(12);
-          }
-          sprintf (key, "/P1_wrap/t%dx%dy%dz%d", gsy[0], gsy[1], gsy[2], gsy[3] );
-
-          exitstatus = write_h5_contraction ( P1_wrap[0][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
           if ( exitstatus != 0 )
           {
             fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
@@ -2915,6 +2950,53 @@ int main(int argc, char **argv) {
                   EXIT(12);
                 }
 
+              }
+            }
+          }
+        }
+
+        fini_6level_dtable( &P23x ); 
+
+#if DO_WRAP_CHECK
+
+        
+        P23x_wrap = init_6level_dtable ( n_yp, kernel_n*kernel_n_geom, 2, 4, 4, 4 );
+
+        /**********************************************************
+         * compute P1, P2, P3, ...
+         **********************************************************/
+        compute_2p2_wrap(
+            fwd_y, P1_wrap, P23x_wrap, gsy, iflavor, io_proc, n_yp, gyp,
+            xunit, spinor_work, kqed_t, VOLUME, Nconf);
+        /**********************************************************
+         * write P1, P2, P3, ...
+         **********************************************************/
+        if ( io_proc == 2 )
+        {
+          int ncdim = 5;
+          int cdim[5] = { 2, 4, 4, 4, Lmax };
+          char key[100];
+
+          sprintf (key, "/P1_wrap/t%dx%dy%dz%d", gsy[0], gsy[1], gsy[2], gsy[3] );
+
+          exitstatus = write_h5_contraction ( P1_wrap[0][0][0][0], NULL, output_filename, key, "double", ncdim, cdim );
+          if ( exitstatus != 0 )
+          {
+            fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
+            EXIT(12);
+          }
+        }
+        if ( io_proc == 2 )
+        {
+          int ncdim = 4;
+          int cdim[4] = { 2, 4, 4, 4 };
+          char key[100];
+          for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
+          {
+            for ( int iyp = 0; iyp < n_yp; iyp++ )
+            {
+              for ( int igeom = 0; igeom < kernel_n_geom; igeom++ )
+              {
                 sprintf (key, "/%s_wrap/t%dx%dy%dz%d/t%dx%dy%dz%d/%s",
                          KQED_GEOM_NAME[igeom], gsy[0], gsy[1], gsy[2], gsy[3],
                          gyp[4*iyp+0], gyp[4*iyp+1], gyp[4*iyp+2], gyp[4*iyp+3],
@@ -2933,9 +3015,8 @@ int main(int argc, char **argv) {
           }
         }
 
-        fini_6level_dtable( &P23x );
         fini_6level_dtable( &P23x_wrap );
-        
+#endif // DO_WRAP_CHECK
       } /* end of P1, P2, P3, ... */
       
       for ( int iflavor = 0; iflavor <= 1; iflavor++ ) 

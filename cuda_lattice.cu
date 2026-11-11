@@ -893,6 +893,7 @@ void ker_2p2_pieces(
         yv_mi_xv[3] * xunit.a
       };
 
+
       for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
         double local_P2_0[4][4][4] = { 0 };
         double local_P2_1[4][4][4] = { 0 };
@@ -990,6 +991,7 @@ void ker_2p2_wrap(
     const double* _RESTR fwd_y, int iflavor, Coord g_proc_coords,
     Coord gsw, int n_y, Coord* gycoords, Pair xunit, QED_kernel_temps kqed_t,
     Geom global_geom, Geom local_geom, int Lmax) {
+
   int gsw_arr[4] = {gsw.t, gsw.x, gsw.y, gsw.z};
   size_t VOLUME = local_geom.T * local_geom.LX * local_geom.LY * local_geom.LZ;
   int local_geom_arr[4] = {local_geom.T, local_geom.LX, local_geom.LY, local_geom.LZ};
@@ -1074,17 +1076,18 @@ void ker_2p2_wrap(
       z[rho] = (zrho + global_geom_arr[rho]) % global_geom_arr[rho];
     }
     // // reduce (TODO faster reduce algo?)
-    // for (int sigma = 0; sigma < 4; ++sigma) {
-    //   for (int nu = 0; nu < 4; ++nu) {
-    //     for (int rho = 0; rho < 4; ++rho) {
-    //       atomicAdd_system(
-    //           &P1[(((rho * 4) + sigma) * 4 + nu) * Lmax + z[rho]],
-    //           pimn[sigma][nu]);
-    //     }
-    //   }
-    // }
+    for (int sigma = 0; sigma < 4; ++sigma) {
+      for (int nu = 0; nu < 4; ++nu) {
+        for (int rho = 0; rho < 4; ++rho) {
+          atomicAdd_system(
+              &P1[(((rho * 4) + sigma) * 4 + nu) * Lmax + z[rho]],
+              pimn[sigma][nu]);
+        }
+      }
+    }
 
     for (int yi = 0; yi < n_y; yi++) {
+
       // For P2: y = (gsy - gsw)
       // For P3, P4, P5: y' = (gsw - gsy)
       // We define y = (gsy - gsw) and use -y as input for P3, P4, P5.
@@ -1165,218 +1168,258 @@ void ker_2p2_wrap(
         xv_mi_yv_true[0] == xv_mi_yv_old[0] && xv_mi_yv_true[1] == xv_mi_yv_old[1] && xv_mi_yv_true[2] == xv_mi_yv_old[2] && xv_mi_yv_true[3] == xv_mi_yv_old[3] && 
         yv_mi_xv_true[0] == yv_mi_xv_old[0] && yv_mi_xv_true[1] == yv_mi_xv_old[1] && yv_mi_xv_true[2] == yv_mi_xv_old[2] && yv_mi_xv_true[3] == yv_mi_xv_old[3]
       ) {
-        continue;
-      }
-
-      double const ym_old[4] = {
-        yv_old[0] * xunit.a,
-        yv_old[1] * xunit.a,
-        yv_old[2] * xunit.a,
-        yv_old[3] * xunit.a };
-      double const ym_minus_old[4] = {
-        -yv_old[0] * xunit.a,
-        -yv_old[1] * xunit.a,
-        -yv_old[2] * xunit.a,
-        -yv_old[3] * xunit.a };
-      double const xm_old[4] = {
-        xv_old[0] * xunit.a,
-        xv_old[1] * xunit.a,
-        xv_old[2] * xunit.a,
-        xv_old[3] * xunit.a };
-      double const xm_minus_old[4] = {
-        -xv_old[0] * xunit.a,
-        -xv_old[1] * xunit.a,
-        -xv_old[2] * xunit.a,
-        -xv_old[3] * xunit.a };
-        
-      double const xm_mi_ym_old[4] = {
-        xv_mi_yv_old[0] * xunit.a,
-        xv_mi_yv_old[1] * xunit.a,
-        xv_mi_yv_old[2] * xunit.a,
-        xv_mi_yv_old[3] * xunit.a
-      };
-
-      double const ym_mi_xm_old[4] = {
-        yv_mi_xv_old[0] * xunit.a,
-        yv_mi_xv_old[1] * xunit.a,
-        yv_mi_xv_old[2] * xunit.a,
-        yv_mi_xv_old[3] * xunit.a
-      };
-
-      double const ym_true[4] = {
-        yv_true[0] * xunit.a,
-        yv_true[1] * xunit.a,
-        yv_true[2] * xunit.a,
-        yv_true[3] * xunit.a };
-      double const ym_minus_true[4] = {
-        -yv_true[0] * xunit.a,
-        -yv_true[1] * xunit.a,
-        -yv_true[2] * xunit.a,
-        -yv_true[3] * xunit.a };
-      double const xm_true[4] = {
-        xv_true[0] * xunit.a,
-        xv_true[1] * xunit.a,
-        xv_true[2] * xunit.a,
-        xv_true[3] * xunit.a };
-      double const xm_minus_true[4] = {
-        -xv_true[0] * xunit.a,
-        -xv_true[1] * xunit.a,
-        -xv_true[2] * xunit.a,
-        -xv_true[3] * xunit.a };
-        
-      double const xm_mi_ym_true[4] = {
-        xv_mi_yv_true[0] * xunit.a,
-        xv_mi_yv_true[1] * xunit.a,
-        xv_mi_yv_true[2] * xunit.a,
-        xv_mi_yv_true[3] * xunit.a
-      };
-
-      double const ym_mi_xm_true[4] = {
-        yv_mi_xv_true[0] * xunit.a,
-        yv_mi_xv_true[1] * xunit.a,
-        yv_mi_xv_true[2] * xunit.a,
-        yv_mi_xv_true[3] * xunit.a
-      };
-
-      for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
-        double local_P2_0[4][4][4] = { 0 };
-        double local_P2_1[4][4][4] = { 0 };
-        double local_P3[4][4][4] = { 0 };
-        double local_P4_0[4][4][4] = { 0 };
-        double local_P4_1[4][4][4] = { 0 };
-        KQED_LX( ikernel, xm_old, ym_old, kqed_t, kerv );
-        for( int k = 0; k < 6; k++ ) {
-          int const rho = idx_comb.comb[k][0];
-          int const sigma = idx_comb.comb[k][1];
-          for ( int nu = 0; nu < 4; nu++ ) {
-            local_P2_0[rho][sigma][nu] = 0.0;
-            for ( int mu = 0; mu < 4; mu++ ) {
-              for ( int lambda = 0; lambda < 4; lambda++ ) {
-                local_P2_0[rho][sigma][nu] += kerv[k][mu][nu][lambda] * pimn[mu][lambda];
-              }
+        for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
+          double local_P2_0[4][4][4] = { 0 };
+          double local_P2_1[4][4][4] = { 0 };
+          double local_P3[4][4][4] = { 0 };
+          double local_P4_0[4][4][4] = { 0 };
+          double local_P4_1[4][4][4] = { 0 };
+          for( int k = 0; k < 6; k++ ) {
+            int const rho = idx_comb.comb[k][0];
+            int const sigma = idx_comb.comb[k][1];
+            for ( int nu = 0; nu < 4; nu++ ) {
+              local_P2_0[rho][sigma][nu] = 0.0;
+              local_P2_1[rho][sigma][nu] = 0.0;
+              local_P3[rho][sigma][nu] = 0.0;
+              local_P4_0[rho][sigma][nu] = 0.0;
+              local_P4_1[rho][sigma][nu] = 0.0;
             }
           }
-        }
-        KQED_LX( ikernel, xm_true, ym_true, kqed_t, kerv );
-        for( int k = 0; k < 6; k++ ) {
-          int const rho = idx_comb.comb[k][0];
-          int const sigma = idx_comb.comb[k][1];
-          for ( int nu = 0; nu < 4; nu++ ) {
-            for ( int mu = 0; mu < 4; mu++ ) {
-              for ( int lambda = 0; lambda < 4; lambda++ ) {
-                local_P2_0[rho][sigma][nu] -= kerv[k][mu][nu][lambda] * pimn[mu][lambda];
+          
+          int ind;
+          for (int rho = 0; rho < 4; ++rho) {
+            for (int sigma = 0; sigma < 4; ++sigma) {
+              for (int nu = 0; nu < 4; ++nu) {
+                #if CUDA_N_QED_GEOM != 5
+                #error "Number of QED kernel geometries does not match implementation"
+                #endif
+                ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 0)*4 + rho)*4 + sigma)*4 + nu;
+                atomicAdd_system(&P23x[ind], local_P2_0[rho][sigma][nu]);
+                ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 1)*4 + rho)*4 + sigma)*4 + nu;
+                atomicAdd_system(&P23x[ind], local_P2_1[rho][sigma][nu]);
+                ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 2)*4 + rho)*4 + sigma)*4 + nu;
+                atomicAdd_system(&P23x[ind], local_P3[rho][sigma][nu]);
+                ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 3)*4 + rho)*4 + sigma)*4 + nu;
+                atomicAdd_system(&P23x[ind], local_P4_0[rho][sigma][nu]);
+                ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 4)*4 + rho)*4 + sigma)*4 + nu;
+                atomicAdd_system(&P23x[ind], local_P4_1[rho][sigma][nu]);
               }
-            }
-          }
-        }
-        KQED_LX( ikernel, ym_old, xm_old, kqed_t, kerv );
-        for( int k = 0; k < 6; k++ ) {
-          int const rho = idx_comb.comb[k][0];
-          int const sigma = idx_comb.comb[k][1];
-          for ( int nu = 0; nu < 4; nu++ ) {
-            local_P2_1[rho][sigma][nu] = 0.0;
-            for ( int mu = 0; mu < 4; mu++ ) {
-              for ( int lambda = 0; lambda < 4; lambda++ ) {
-                local_P2_1[rho][sigma][nu] += kerv[k][nu][mu][lambda] * pimn[mu][lambda];
-              }
-            }
-          }
-        }
-        KQED_LX( ikernel, ym_true, xm_true, kqed_t, kerv );
-        for( int k = 0; k < 6; k++ ) {
-          int const rho = idx_comb.comb[k][0];
-          int const sigma = idx_comb.comb[k][1];
-          for ( int nu = 0; nu < 4; nu++ ) {
-            for ( int mu = 0; mu < 4; mu++ ) {
-              for ( int lambda = 0; lambda < 4; lambda++ ) {
-                local_P2_1[rho][sigma][nu] -= kerv[k][nu][mu][lambda] * pimn[mu][lambda];
-              }
-            }
-          }
-        }
-        KQED_LX( ikernel, xm_mi_ym_old, ym_minus_old, kqed_t, kerv );
-        for( int k = 0; k < 6; k++ ) {
-          int const rho = idx_comb.comb[k][0];
-          int const sigma = idx_comb.comb[k][1];
-          for ( int nu = 0; nu < 4; nu++ ) {
-            local_P3[rho][sigma][nu] = 0.0;
-            for ( int mu = 0; mu < 4; mu++ ) {
-              for ( int lambda = 0; lambda < 4; lambda++ ) {
-                local_P3[rho][sigma][nu] += kerv[k][mu][lambda][nu] * pimn[mu][lambda];
-              }
-            }
-          }
-        }
-        KQED_LX( ikernel, xm_mi_ym_true, ym_minus_true, kqed_t, kerv );
-        for( int k = 0; k < 6; k++ ) {
-          int const rho = idx_comb.comb[k][0];
-          int const sigma = idx_comb.comb[k][1];
-          for ( int nu = 0; nu < 4; nu++ ) {
-            for ( int mu = 0; mu < 4; mu++ ) {
-              for ( int lambda = 0; lambda < 4; lambda++ ) {
-                local_P3[rho][sigma][nu] -= kerv[k][mu][lambda][nu] * pimn[mu][lambda];
-              }
-            }
-          }
-        }
-        KQED_LX( ikernel, ym_mi_xm_old, xm_minus_old, kqed_t, kerv );
-        for( int k = 0; k < 6; k++ ) {
-          int const rho = idx_comb.comb[k][0];
-          int const sigma = idx_comb.comb[k][1];
-          for ( int nu = 0; nu < 4; nu++ ) {
-            local_P4_0[rho][sigma][nu] = 0.0;
-            for ( int mu = 0; mu < 4; mu++ ) {
-              for ( int lambda = 0; lambda < 4; lambda++ ) {
-                local_P4_0[rho][sigma][nu] += kerv[k][nu][lambda][mu] * pimn[mu][lambda];
-              }
-            }
-            local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (xv_old[rho]);
-            local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (xv_old[sigma]);
-            // old P4_1
-            // local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (yv[rho]-xv[rho]);
-            // local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (yv[sigma]-xv[sigma]);
-          }
-        }
-        KQED_LX( ikernel, ym_mi_xm_true, xm_minus_true, kqed_t, kerv );
-        for( int k = 0; k < 6; k++ ) {
-          int const rho = idx_comb.comb[k][0];
-          int const sigma = idx_comb.comb[k][1];
-          for ( int nu = 0; nu < 4; nu++ ) {
-            for ( int mu = 0; mu < 4; mu++ ) {
-              for ( int lambda = 0; lambda < 4; lambda++ ) {
-                local_P4_0[rho][sigma][nu] -= kerv[k][nu][lambda][mu] * pimn[mu][lambda];
-              }
-            }
-            local_P4_1[rho][sigma][nu] -= local_P4_0[rho][sigma][nu] * (xv_true[rho]);
-            local_P4_1[sigma][rho][nu] -= -local_P4_0[rho][sigma][nu] * (xv_true[sigma]);
-            // old P4_1
-            // local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (yv[rho]-xv[rho]);
-            // local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (yv[sigma]-xv[sigma]);
-          }
-        }
-
-        // reduce (TODO faster reduce algo?)
-        int ind;
-        for (int rho = 0; rho < 4; ++rho) {
-          for (int sigma = 0; sigma < 4; ++sigma) {
-            for (int nu = 0; nu < 4; ++nu) {
-              #if CUDA_N_QED_GEOM != 5
-              #error "Number of QED kernel geometries does not match implementation"
-              #endif
-              ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 0)*4 + rho)*4 + sigma)*4 + nu;
-              atomicAdd_system(&P23x[ind], local_P2_0[rho][sigma][nu]);
-              ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 1)*4 + rho)*4 + sigma)*4 + nu;
-              atomicAdd_system(&P23x[ind], local_P2_1[rho][sigma][nu]);
-              ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 2)*4 + rho)*4 + sigma)*4 + nu;
-              atomicAdd_system(&P23x[ind], local_P3[rho][sigma][nu]);
-              ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 3)*4 + rho)*4 + sigma)*4 + nu;
-              atomicAdd_system(&P23x[ind], local_P4_0[rho][sigma][nu]);
-              ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 4)*4 + rho)*4 + sigma)*4 + nu;
-              atomicAdd_system(&P23x[ind], local_P4_1[rho][sigma][nu]);
             }
           }
         }
 
+      } else {
+
+        double const ym_old[4] = {
+          yv_old[0] * xunit.a,
+          yv_old[1] * xunit.a,
+          yv_old[2] * xunit.a,
+          yv_old[3] * xunit.a };
+        double const ym_minus_old[4] = {
+          -yv_old[0] * xunit.a,
+          -yv_old[1] * xunit.a,
+          -yv_old[2] * xunit.a,
+          -yv_old[3] * xunit.a };
+        double const xm_old[4] = {
+          xv_old[0] * xunit.a,
+          xv_old[1] * xunit.a,
+          xv_old[2] * xunit.a,
+          xv_old[3] * xunit.a };
+        double const xm_minus_old[4] = {
+          -xv_old[0] * xunit.a,
+          -xv_old[1] * xunit.a,
+          -xv_old[2] * xunit.a,
+          -xv_old[3] * xunit.a };
+          
+        double const xm_mi_ym_old[4] = {
+          xv_mi_yv_old[0] * xunit.a,
+          xv_mi_yv_old[1] * xunit.a,
+          xv_mi_yv_old[2] * xunit.a,
+          xv_mi_yv_old[3] * xunit.a
+        };
+
+        double const ym_mi_xm_old[4] = {
+          yv_mi_xv_old[0] * xunit.a,
+          yv_mi_xv_old[1] * xunit.a,
+          yv_mi_xv_old[2] * xunit.a,
+          yv_mi_xv_old[3] * xunit.a
+        };
+
+        double const ym_true[4] = {
+          yv_true[0] * xunit.a,
+          yv_true[1] * xunit.a,
+          yv_true[2] * xunit.a,
+          yv_true[3] * xunit.a };
+        double const ym_minus_true[4] = {
+          -yv_true[0] * xunit.a,
+          -yv_true[1] * xunit.a,
+          -yv_true[2] * xunit.a,
+          -yv_true[3] * xunit.a };
+        double const xm_true[4] = {
+          xv_true[0] * xunit.a,
+          xv_true[1] * xunit.a,
+          xv_true[2] * xunit.a,
+          xv_true[3] * xunit.a };
+        double const xm_minus_true[4] = {
+          -xv_true[0] * xunit.a,
+          -xv_true[1] * xunit.a,
+          -xv_true[2] * xunit.a,
+          -xv_true[3] * xunit.a };
+          
+        double const xm_mi_ym_true[4] = {
+          xv_mi_yv_true[0] * xunit.a,
+          xv_mi_yv_true[1] * xunit.a,
+          xv_mi_yv_true[2] * xunit.a,
+          xv_mi_yv_true[3] * xunit.a
+        };
+
+        double const ym_mi_xm_true[4] = {
+          yv_mi_xv_true[0] * xunit.a,
+          yv_mi_xv_true[1] * xunit.a,
+          yv_mi_xv_true[2] * xunit.a,
+          yv_mi_xv_true[3] * xunit.a
+        };
+
+        for (int ikernel = 0; ikernel < CUDA_N_QED_KERNEL; ++ikernel) {
+          double local_P2_0[4][4][4] = { 0 };
+          double local_P2_1[4][4][4] = { 0 };
+          double local_P3[4][4][4] = { 0 };
+          double local_P4_0[4][4][4] = { 0 };
+          double local_P4_1[4][4][4] = { 0 };
+          KQED_LX( ikernel, xm_old, ym_old, kqed_t, kerv );
+          for( int k = 0; k < 6; k++ ) {
+            int const rho = idx_comb.comb[k][0];
+            int const sigma = idx_comb.comb[k][1];
+            for ( int nu = 0; nu < 4; nu++ ) {
+              local_P2_0[rho][sigma][nu] = 0.0;
+              for ( int mu = 0; mu < 4; mu++ ) {
+                for ( int lambda = 0; lambda < 4; lambda++ ) {
+                  local_P2_0[rho][sigma][nu] += kerv[k][mu][nu][lambda] * pimn[mu][lambda];
+                }
+              }
+            }
+          }
+          KQED_LX( ikernel, xm_true, ym_true, kqed_t, kerv );
+          for( int k = 0; k < 6; k++ ) {
+            int const rho = idx_comb.comb[k][0];
+            int const sigma = idx_comb.comb[k][1];
+            for ( int nu = 0; nu < 4; nu++ ) {
+              for ( int mu = 0; mu < 4; mu++ ) {
+                for ( int lambda = 0; lambda < 4; lambda++ ) {
+                  local_P2_0[rho][sigma][nu] -= kerv[k][mu][nu][lambda] * pimn[mu][lambda];
+                }
+              }
+            }
+          }
+          KQED_LX( ikernel, ym_old, xm_old, kqed_t, kerv );
+          for( int k = 0; k < 6; k++ ) {
+            int const rho = idx_comb.comb[k][0];
+            int const sigma = idx_comb.comb[k][1];
+            for ( int nu = 0; nu < 4; nu++ ) {
+              local_P2_1[rho][sigma][nu] = 0.0;
+              for ( int mu = 0; mu < 4; mu++ ) {
+                for ( int lambda = 0; lambda < 4; lambda++ ) {
+                  local_P2_1[rho][sigma][nu] += kerv[k][nu][mu][lambda] * pimn[mu][lambda];
+                }
+              }
+            }
+          }
+          KQED_LX( ikernel, ym_true, xm_true, kqed_t, kerv );
+          for( int k = 0; k < 6; k++ ) {
+            int const rho = idx_comb.comb[k][0];
+            int const sigma = idx_comb.comb[k][1];
+            for ( int nu = 0; nu < 4; nu++ ) {
+              for ( int mu = 0; mu < 4; mu++ ) {
+                for ( int lambda = 0; lambda < 4; lambda++ ) {
+                  local_P2_1[rho][sigma][nu] -= kerv[k][nu][mu][lambda] * pimn[mu][lambda];
+                }
+              }
+            }
+          }
+          KQED_LX( ikernel, xm_mi_ym_old, ym_minus_old, kqed_t, kerv );
+          for( int k = 0; k < 6; k++ ) {
+            int const rho = idx_comb.comb[k][0];
+            int const sigma = idx_comb.comb[k][1];
+            for ( int nu = 0; nu < 4; nu++ ) {
+              local_P3[rho][sigma][nu] = 0.0;
+              for ( int mu = 0; mu < 4; mu++ ) {
+                for ( int lambda = 0; lambda < 4; lambda++ ) {
+                  local_P3[rho][sigma][nu] += kerv[k][mu][lambda][nu] * pimn[mu][lambda];
+                }
+              }
+            }
+          }
+          KQED_LX( ikernel, xm_mi_ym_true, ym_minus_true, kqed_t, kerv );
+          for( int k = 0; k < 6; k++ ) {
+            int const rho = idx_comb.comb[k][0];
+            int const sigma = idx_comb.comb[k][1];
+            for ( int nu = 0; nu < 4; nu++ ) {
+              for ( int mu = 0; mu < 4; mu++ ) {
+                for ( int lambda = 0; lambda < 4; lambda++ ) {
+                  local_P3[rho][sigma][nu] -= kerv[k][mu][lambda][nu] * pimn[mu][lambda];
+                }
+              }
+            }
+          }
+          KQED_LX( ikernel, ym_mi_xm_old, xm_minus_old, kqed_t, kerv );
+          for( int k = 0; k < 6; k++ ) {
+            int const rho = idx_comb.comb[k][0];
+            int const sigma = idx_comb.comb[k][1];
+            for ( int nu = 0; nu < 4; nu++ ) {
+              local_P4_0[rho][sigma][nu] = 0.0;
+              for ( int mu = 0; mu < 4; mu++ ) {
+                for ( int lambda = 0; lambda < 4; lambda++ ) {
+                  local_P4_0[rho][sigma][nu] += kerv[k][nu][lambda][mu] * pimn[mu][lambda];
+                }
+              }
+              local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (xv_old[rho]);
+              local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (xv_old[sigma]);
+              // old P4_1
+              // local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (yv[rho]-xv[rho]);
+              // local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (yv[sigma]-xv[sigma]);
+            }
+          }
+          KQED_LX( ikernel, ym_mi_xm_true, xm_minus_true, kqed_t, kerv );
+          for( int k = 0; k < 6; k++ ) {
+            int const rho = idx_comb.comb[k][0];
+            int const sigma = idx_comb.comb[k][1];
+            for ( int nu = 0; nu < 4; nu++ ) {
+              for ( int mu = 0; mu < 4; mu++ ) {
+                for ( int lambda = 0; lambda < 4; lambda++ ) {
+                  local_P4_0[rho][sigma][nu] -= kerv[k][nu][lambda][mu] * pimn[mu][lambda];
+                }
+              }
+              local_P4_1[rho][sigma][nu] -= local_P4_0[rho][sigma][nu] * (xv_true[rho]);
+              local_P4_1[sigma][rho][nu] -= -local_P4_0[rho][sigma][nu] * (xv_true[sigma]);
+              // old P4_1
+              // local_P4_1[rho][sigma][nu] = local_P4_0[rho][sigma][nu] * (yv[rho]-xv[rho]);
+              // local_P4_1[sigma][rho][nu] = -local_P4_0[rho][sigma][nu] * (yv[sigma]-xv[sigma]);
+            }
+          }
+
+          // reduce (TODO faster reduce algo?)
+          int ind;
+          for (int rho = 0; rho < 4; ++rho) {
+            for (int sigma = 0; sigma < 4; ++sigma) {
+              for (int nu = 0; nu < 4; ++nu) {
+                #if CUDA_N_QED_GEOM != 5
+                #error "Number of QED kernel geometries does not match implementation"
+                #endif
+                ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 0)*4 + rho)*4 + sigma)*4 + nu;
+                atomicAdd_system(&P23x[ind], local_P2_0[rho][sigma][nu]);
+                ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 1)*4 + rho)*4 + sigma)*4 + nu;
+                atomicAdd_system(&P23x[ind], local_P2_1[rho][sigma][nu]);
+                ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 2)*4 + rho)*4 + sigma)*4 + nu;
+                atomicAdd_system(&P23x[ind], local_P3[rho][sigma][nu]);
+                ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 3)*4 + rho)*4 + sigma)*4 + nu;
+                atomicAdd_system(&P23x[ind], local_P4_0[rho][sigma][nu]);
+                ind = ((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 4)*4 + rho)*4 + sigma)*4 + nu;
+                atomicAdd_system(&P23x[ind], local_P4_1[rho][sigma][nu]);
+              }
+            }
+          }
+
+        }
       }
     }
   }
