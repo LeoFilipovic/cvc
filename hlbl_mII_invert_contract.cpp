@@ -398,7 +398,7 @@ inline void compute_2p2_pieces(
 } // omp critical
 
   const size_t n_P23x_global = (size_t)n_y * kernel_n * kernel_n_geom * 2 * T_global * LX_global * LY_global * LZ_global * 4 * 4 * 4;
-  MPI_Allreduce ( MPI_IN_PLACE, (void*)P23x[0][0][0][0][0][0][0][0], (int)n_P23x_global, MPI_DOUBLE, MPI_SUM, g_cart_grid );
+  MPI_Allreduce ( MPI_IN_PLACE, (void*)P23x[0][0][0][0][0][0][0][0][0], (int)n_P23x_global, MPI_DOUBLE, MPI_SUM, g_cart_grid );
 
 #endif
 
