@@ -346,8 +346,7 @@ inline void compute_2p2_pieces(
 
   double* local_P1 = (double*)malloc(sizeof_P1);
   double* local_P23x = (double*)malloc(sizeof_P23x);
-  double ********* all_P23x = init_9level_dtable ( n_y, kernel_n*kernel_n_geom, T_global, LX_global, LY_global, LZ_global, 4, 4, 4 );
-  if ( local_P1 == NULL || local_P23x == NULL || all_P23x == NULL )
+  if ( local_P1 == NULL || local_P23x == NULL)
   {
     fprintf ( stderr, "Error alloc local_P1,23x or all_P23x\n" );
     exit ( 57 );
@@ -367,6 +366,9 @@ inline void compute_2p2_pieces(
 
 #pragma omp critical
 {
+  fprintf(stdout, "# [2p2 contr] At g_cart_id %d : T is %d LX is %d LY is %d LZ is %d\n", g_cart_id, T, LX, LY, LZ);
+  fprintf(stdout, "# [2p2 contr] At g_cart_id %d : g_proc_coords[0] is %d g_proc_coords[1] is %d g_proc_coords[2] is %d g_proc_coords[3] is %d\n", g_cart_id, g_proc_coords[0], g_proc_coords[1], g_proc_coords[2], g_proc_coords[3]);
+
   for ( int yind = 0; yind < n_y; yind++) {
     for ( int ikernel_x_geom = 0; ikernel_x_geom < kernel_n*kernel_n_geom; ikernel_x_geom++) {
       for ( int it = 0; it < T; it++) {
@@ -393,47 +395,17 @@ inline void compute_2p2_pieces(
       }
     }
   }
-
-
-  // if ( MPI_Allreduce(local_P23x, all_P23x[0][0][0][0][0][0][0][0], n_P23x, MPI_DOUBLE, MPI_SUM, g_cart_grid)
-  //      != MPI_SUCCESS ) {
-  //   if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
-  // }
 } // omp critical
-#else
-  memcpy((void*)P1[iflavor][0][0][0], (void*)local_P1, sizeof_P1);
-  memcpy((void*)all_P23x[0][0][0][0][0][0][0][0], (void*)local_P23x, sizeof_P23x);
+
+  const size_t n_P23x_global = (size_t)n_y * kernel_n * kernel_n_geom * 2 * T_global * LX_global * LY_global * LZ_global * 4 * 4 * 4;
+  MPI_Allreduce ( MPI_IN_PLACE, (void*)P23x[0][0][0][0][0][0][0][0], (int)n_P23x_global, MPI_DOUBLE, MPI_SUM, g_cart_grid );
+
 #endif
 
-  // interleave data into output array
-  // for ( int yi = 0; yi < n_y; yi++ )
-  // {
-  //   for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
-  //   {
-  //     for ( int igeom = 0; igeom < kernel_n_geom; igeom++ )
-  //     {
-  //       for ( int t = 0; t < T_global; t++)
-  //       {
-  //         for (int x = 0; x < LX_global; x++)
-  //         {
-  //           for (int y = 0; y < LY_global; y++)
-  //           {
-  //             for (int z = 0; z < LZ_global; z++)
-  //             {
-  //             memcpy(
-  //                 (void*)P23x[yi][kernel_n_geom*ikernel + igeom][iflavor][t][x][y][z][0][0],
-  //                 (void*)all_P23x[yi][kernel_n_geom*ikernel + igeom][t][x][y][z][0][0], sizeof(double)*4*4*4);
-  //             }
-  //           }
-  //         }
-  //       }
-  //     }
-  //   }
-  // }
 
   free(local_P1);
   free(local_P23x);
-  fini_9level_dtable ( &all_P23x );
+
 
   checkCudaErrors(cudaFree(d_P1));
   checkCudaErrors(cudaFree(d_P23x));
