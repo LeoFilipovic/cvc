@@ -59,7 +59,7 @@ void cu_4pt_contraction(
 void cu_2p2_pieces(
     double* d_P1, double* d_P23x, const double* fwd_y, int iflavor,
     Coord proc_coords, Coord gsw, int n_y, Coord* d_gycoords, Pair xunit,
-    QED_kernel_temps kqed_t, Geom global_geom, Geom local_geom, const int* Rcut2_bins, unsigned const Rcut_n, int ***** sparse_masks);
+    QED_kernel_temps kqed_t, Geom global_geom, Geom local_geom);
 
 
 /**

@@ -230,6 +230,58 @@ inline void fini_8level_dtable ( double ********* s  ) {
 /************************************************************************************/
 
 
+inline double ********* init_9level_dtable (size_t const N0, size_t const N1, size_t const N2, size_t const N3, size_t const N4, size_t const N5, size_t const N6, size_t const N7 , size_t const N8 ) {
+  double ******** s__ = NULL;
+  s__ = init_8level_dtable ( N0*N1, N2, N3, N4, N5, N6, N7, N8);
+  if ( s__ == NULL ) return( NULL );
+
+  double ********* s_ = ( N0 == 0 ) ? NULL : ( double *********) malloc( N0 * sizeof( double ********) );
+  if ( s_ == NULL ) return ( NULL );
+
+  for ( size_t i = 0; i < N0; i++ ) s_[i] = s__ + i * N1;
+  return( s_ );
+}  // end of init_9level_dtable
+
+/************************************************************************************/
+/************************************************************************************/
+
+
+inline void fini_9level_dtable ( double ********** s  ) {
+  if ( *s != NULL ) {
+    // fprintf ( stdout, "# [fini_8level_dtable] active\n");
+    fini_8level_dtable ( *s );
+    free ( *s );
+    *s = NULL;
+  }
+}  // end of fini_9level_dtable
+/************************************************************************************/
+/************************************************************************************/
+
+inline double ********** init_10level_dtable (size_t const N0, size_t const N1, size_t const N2, size_t const N3, size_t const N4, size_t const N5, size_t const N6, size_t const N7 , size_t const N8 , size_t const N9) {
+  double ********* s__ = NULL;
+  s__ = init_9level_dtable ( N0*N1, N2, N3, N4, N5, N6, N7, N8, N9);
+  if ( s__ == NULL ) return( NULL );
+
+  double ********** s_ = ( N0 == 0 ) ? NULL : ( double **********) malloc( N0 * sizeof( double *********) );
+  if ( s_ == NULL ) return ( NULL );
+
+  for ( size_t i = 0; i < N0; i++ ) s_[i] = s__ + i * N1;
+  return( s_ );
+}  // end of init_8level_dtable
+
+/************************************************************************************/
+/************************************************************************************/
+
+
+inline void fini_10level_dtable ( double *********** s  ) {
+  if ( *s != NULL ) {
+    // fprintf ( stdout, "# [fini_8level_dtable] active\n");
+    fini_9level_dtable ( *s );
+    free ( *s );
+    *s = NULL;
+  }
+}  // end of fini_10level_dtable
+
 }  /* end of namespace cvc */
 
 #endif
