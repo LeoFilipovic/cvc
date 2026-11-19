@@ -384,7 +384,7 @@ inline void compute_2p2_pieces(
                     int real_iy = iy + g_proc_coords[2] * LY;
                     int real_iz = iz + g_proc_coords[3] * LZ;
                     P23x[yind][ikernel_x_geom][iflavor][real_it][real_ix][real_iy][real_iz][mu][nu][la] += local_P23x[ind_for_local];
-                    fprintf(stdout, "# [2p2 contr] At g_cart_id %d : Adding to t %d x %d y %d z %d mu %d nu %d la %d : %16.7e.\n", g_cart_id, real_it, real_ix, real_iy, real_iz, mu, nu, la, local_P23x[ind_for_local]);
+                    // fprintf(stdout, "# [2p2 contr] At g_cart_id %d : Adding to t %d x %d y %d z %d mu %d nu %d la %d : %16.7e.\n", g_cart_id, real_it, real_ix, real_iy, real_iz, mu, nu, la, local_P23x[ind_for_local]);
                     // fflush(stdout);
                   }
                 }
@@ -1987,7 +1987,8 @@ int main(int argc, char **argv) {
             fwd_y, P1, P23x, gsy, iflavor, io_proc, n_yp, gyp,
             xunit, spinor_work, kqed_t, VOLUME, Nconf);
 
-        fprintf(stdout, "[hlbl_mII_invert_contract] completed compute_2p2_pieces, writing to h5 file");
+        fprintf(stdout, "[hlbl_mII_invert_contract] completed compute_2p2_pieces, writing to h5 file\n");
+        fflush(stdout);
 
         /**********************************************************
          * write P1, P2, P3, ...
@@ -2005,6 +2006,8 @@ int main(int argc, char **argv) {
             fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
             EXIT(12);
           }
+          fprintf(stdout, "[hlbl_mII_invert_contract] completed writing P1\n");
+          fflush(stdout);
         }
         if ( io_proc == 2 )
         {
@@ -2030,6 +2033,8 @@ int main(int argc, char **argv) {
                   fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
                   EXIT(12);
                 }
+                fprintf(stdout, "[hlbl_mII_invert_contract] completed writing %s\n", KQED_GEOM_NAME[igeom]);
+                fflush(stdout);
               }
             }
           }
@@ -2038,7 +2043,7 @@ int main(int argc, char **argv) {
         fini_10level_dtable( &P23x );
         
       } /* end of P1, P2, P3, ... */
-      
+#if DO_CONNECTED
       for ( int iflavor = 0; iflavor <= 1; iflavor++ ) 
       {
         /***********************************************************
@@ -2121,11 +2126,13 @@ int main(int argc, char **argv) {
          *  - sum with QED kernel
          ***********************************************************/
  
+
+
 #if _WITH_TIMER
         gettimeofday ( &ta, (struct timezone *)NULL );
 #endif
 
-#if DO_CONNECTED
+
         double *** local_kernel_sum = init_3level_dtable(kernel_n , sparsening_n, Rcut_n);
         compute_4pt_contraction(
             fwd_src, fwd_y, g_dzu, g_dzsu, gsx, iflavor, xunit, yv,
@@ -2142,7 +2149,7 @@ int main(int argc, char **argv) {
         }
 
         fini_3level_dtable( &local_kernel_sum );
-#endif // DO_CONNECTED
+
 #if _WITH_TIMER
         gettimeofday ( &tb, (struct timezone *)NULL );
         show_time ( &ta, &tb, "hlbl_mII_invert_contract", "kernel-sum", io_proc == 2 );
@@ -2184,7 +2191,7 @@ int main(int argc, char **argv) {
         fini_5level_dtable ( &g_dzsu );
 
       }  /* end of loop on flavor */
-
+#endif // DO_CONNECTED
     }  /* end of loop on |y| */
 
 
