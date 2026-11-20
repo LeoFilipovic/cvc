@@ -54,6 +54,9 @@ int write_h5_attribute ( const char * filename, const char * attr_name, const ch
 
 #ifdef HAVE_MPI
 int write_h5_contraction_parallel ( void * const contr, char * const afilename, char * const tag, char * const  data_type, int const ncdim, const int * const cdim, MPI_Comm comm );
+
+int write_h5_hyperslab_parallel ( const double * const contr, const char * const filename, const char * const tag,
+    int const ncdim, const int * const gdim, const int * const start, const int * const count, MPI_Comm comm );
 #endif
 
 #endif

@@ -1824,6 +1824,111 @@ int write_h5_contraction_parallel ( void * const contr, char * const afilename, 
 
 }  /* end of write_h5_contraction_parallel */
 
+/***************************************************************************
+ * collective write of a distributed array into one dataset of an h5 file
+ *
+ * every rank of comm calls this; each rank contributes the hyperslab
+ *   [start[i], start[i]+count[i])  of the global array with dimensions gdim
+ * from its contiguous, row-major buffer contr (prod(count) doubles)
+ *
+ * - the file is created if it does not exist, otherwise opened read-write
+ * - intermediate groups in tag are created as needed
+ * - the file is closed again on return, so serial (single-rank) writes
+ *   to the same file before / after this call are safe
+ ***************************************************************************/
+int write_h5_hyperslab_parallel ( const double * const contr, const char * const filename, const char * const tag,
+    int const ncdim, const int * const gdim, const int * const start, const int * const count, MPI_Comm comm )
+{
+  if ( filename == NULL || tag == NULL || ncdim <= 0 ) {
+    fprintf( stderr, "[write_h5_hyperslab_parallel] Error, bad arguments %s %d\n", __FILE__, __LINE__ );
+    return(1);
+  }
+
+  int mpi_rank;
+  MPI_Comm_rank ( comm, &mpi_rank );
+
+  /***************************************************************************
+   * decide create vs. open consistently on all ranks; the barrier makes sure
+   * any preceding serial writer has closed the file
+   ***************************************************************************/
+  MPI_Barrier ( comm );
+  int file_exists = 0;
+  if ( mpi_rank == 0 ) {
+    struct stat fileStat;
+    file_exists = ( stat ( filename, &fileStat ) == 0 );
+  }
+  MPI_Bcast ( &file_exists, 1, MPI_INT, 0, comm );
+
+  hid_t fapl_id = H5Pcreate ( H5P_FILE_ACCESS );
+  H5Pset_fapl_mpio ( fapl_id, comm, MPI_INFO_NULL );
+
+  hid_t file_id = file_exists ? H5Fopen ( filename, H5F_ACC_RDWR, fapl_id )
+                              : H5Fcreate ( filename, H5F_ACC_TRUNC, H5P_DEFAULT, fapl_id );
+  H5Pclose ( fapl_id );
+  if ( file_id < 0 ) {
+    fprintf ( stderr, "[write_h5_hyperslab_parallel] Error from H5F%s for %s %s %d\n", file_exists ? "open" : "create", filename, __FILE__, __LINE__ );
+    return(2);
+  }
+
+  hsize_t * h_gdim  = (hsize_t*) malloc ( 3 * ncdim * sizeof(hsize_t) );
+  hsize_t * h_start = h_gdim + ncdim;
+  hsize_t * h_count = h_gdim + 2 * ncdim;
+  hsize_t nlocal = 1;
+  for ( int i = 0; i < ncdim; i++ ) {
+    h_gdim[i]  = (hsize_t)gdim[i];
+    h_start[i] = (hsize_t)start[i];
+    h_count[i] = (hsize_t)count[i];
+    nlocal *= h_count[i];
+  }
+
+  /***************************************************************************
+   * create dataset (collective), creating missing groups on the way
+   ***************************************************************************/
+  hid_t filespace = H5Screate_simple ( ncdim, h_gdim, NULL );
+  hid_t lcpl_id = H5Pcreate ( H5P_LINK_CREATE );
+  H5Pset_create_intermediate_group ( lcpl_id, 1 );
+
+  hid_t dataset_id = H5Dcreate2 ( file_id, tag, H5T_IEEE_F64LE, filespace, lcpl_id, H5P_DEFAULT, H5P_DEFAULT );
+  H5Pclose ( lcpl_id );
+  if ( dataset_id < 0 ) {
+    fprintf ( stderr, "[write_h5_hyperslab_parallel] Error from H5Dcreate2 for %s (exists already?) %s %d\n", tag, __FILE__, __LINE__ );
+    H5Sclose ( filespace );
+    H5Fclose ( file_id );
+    free ( h_gdim );
+    return(3);
+  }
+
+  /***************************************************************************
+   * select this rank's block and write collectively
+   ***************************************************************************/
+  H5Sselect_hyperslab ( filespace, H5S_SELECT_SET, h_start, NULL, h_count, NULL );
+  hid_t memspace = H5Screate_simple ( 1, &nlocal, NULL );
+
+  hid_t dxpl_id = H5Pcreate ( H5P_DATASET_XFER );
+  H5Pset_dxpl_mpio ( dxpl_id, H5FD_MPIO_COLLECTIVE );
+
+  herr_t status = H5Dwrite ( dataset_id, H5T_NATIVE_DOUBLE, memspace, filespace, dxpl_id, contr );
+
+  H5Pclose ( dxpl_id );
+  H5Sclose ( memspace );
+  H5Sclose ( filespace );
+  H5Dclose ( dataset_id );
+  free ( h_gdim );
+
+  if ( status < 0 ) {
+    fprintf ( stderr, "[write_h5_hyperslab_parallel] Error from H5Dwrite for %s %s %d\n", tag, __FILE__, __LINE__ );
+    H5Fclose ( file_id );
+    return(4);
+  }
+
+  if ( H5Fclose ( file_id ) < 0 ) {
+    fprintf ( stderr, "[write_h5_hyperslab_parallel] Error from H5Fclose %s %d\n", __FILE__, __LINE__ );
+    return(5);
+  }
+
+  return(0);
+}  /* end of write_h5_hyperslab_parallel */
+
 #endif
 
 

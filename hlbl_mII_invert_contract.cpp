@@ -280,14 +280,20 @@ inline void g5_gmu_prop(g_prop_t y, prop_t x, int iflavor, int mu, int ib, unsig
 /***********************************************************
  * gnu g5 D_y^+ g5 gmu U_y
  ***********************************************************/
+/***********************************************************
+ * P23x is a host buffer for the LOCAL lattice only, layout
+ *   [n_y][kernel_n][kernel_n_geom][T][LX][LY][LZ][4][4][4]
+ * (same as the device buffer); it is written to file with a
+ * parallel hyperslab write, no global gather is done.
+ ***********************************************************/
 inline void compute_2p2_pieces(
-    const prop_t fwd_y, double ***** P1, double ********** P23x,
+    const prop_t fwd_y, double ***** P1, double * P23x,
     const int* gsw, int iflavor, int io_proc, int n_y, const int * gycoords,
     const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
     unsigned VOLUME, int Nconf) {
 
   struct timeval ta, tb, ta2, tb2;
-  
+
 #if _WITH_TIMER
   gettimeofday ( &ta, (struct timezone *)NULL );
 #endif
@@ -296,8 +302,8 @@ inline void compute_2p2_pieces(
   double* d_P23x = NULL;
   const int Lmax = get_Lmax();
   const size_t n_P1 = 4 * 4 * 4 * Lmax;
-  // const size_t n_P23x = n_y * kernel_n * kernel_n_geom * T_global * LX_global * LY_global * LZ_global * 4 * 4 * 4;
-  const size_t n_P23x = n_y * kernel_n * kernel_n_geom * T * LX * LY * LZ * 4 * 4 * 4;
+  /* size_t arithmetic from the start, int overflows for large local volumes */
+  const size_t n_P23x = (size_t)n_y * kernel_n * kernel_n_geom * (size_t)VOLUME * 4 * 4 * 4;
   const size_t sizeof_P1 = n_P1 * sizeof(double);
   const size_t sizeof_P23x = n_P23x * sizeof(double);
   checkCudaErrors(cudaMalloc((void**)&d_P1, sizeof_P1));
@@ -345,17 +351,17 @@ inline void compute_2p2_pieces(
 
 
   double* local_P1 = (double*)malloc(sizeof_P1);
-  double* local_P23x = (double*)malloc(sizeof_P23x);
-  if ( local_P1 == NULL || local_P23x == NULL)
+  if ( local_P1 == NULL )
   {
-    fprintf ( stderr, "Error alloc local_P1,23x or all_P23x\n" );
+    fprintf ( stderr, "Error alloc local_P1\n" );
     exit ( 57 );
   }
-  
+
   checkCudaErrors(cudaMemcpy(
       (void*)local_P1, (const void*)d_P1, sizeof_P1, cudaMemcpyDeviceToHost));
+  /* each rank keeps only its own sites; the kernel fills them completely */
   checkCudaErrors(cudaMemcpy(
-      (void*)local_P23x, (const void*)d_P23x, sizeof_P23x, cudaMemcpyDeviceToHost));
+      (void*)P23x, (const void*)d_P23x, sizeof_P23x, cudaMemcpyDeviceToHost));
 
 #ifdef HAVE_MPI
   // TODO: just MPI_Reduce?
@@ -363,48 +369,12 @@ inline void compute_2p2_pieces(
        != MPI_SUCCESS ) {
     if ( g_cart_id == 0 ) fprintf ( stderr, "[] Error from MPI_Allreduce %s %d\n", __FILE__, __LINE__ );
   }
-
-#pragma omp critical
-{
-  fprintf(stdout, "# [2p2 contr] At g_cart_id %d : T is %d LX is %d LY is %d LZ is %d\n", g_cart_id, T, LX, LY, LZ);
-  fprintf(stdout, "# [2p2 contr] At g_cart_id %d : g_proc_coords[0] is %d g_proc_coords[1] is %d g_proc_coords[2] is %d g_proc_coords[3] is %d\n", g_cart_id, g_proc_coords[0], g_proc_coords[1], g_proc_coords[2], g_proc_coords[3]);
-
-  for ( int yind = 0; yind < n_y; yind++) {
-    for ( int ikernel_x_geom = 0; ikernel_x_geom < kernel_n*kernel_n_geom; ikernel_x_geom++) {
-      for ( int it = 0; it < T; it++) {
-        for ( int ix = 0; ix < LX; ix++) {
-          for ( int iy = 0; iy < LY; iy++) {
-            for ( int iz = 0; iz < LZ; iz++) {
-              for ( int mu = 0; mu < 4; mu++) {
-                for (int nu = 0; nu < 4; nu++) {
-                  for (int la = 0; la < 4; la++) {
-                    int ind_for_local = (((((((yind*kernel_n*kernel_n_geom + ikernel_x_geom ) * T + it) * LX + ix) * LY + iy) * LZ + iz) * 4 + mu) * 4 + nu) * 4 + la;
-                    int real_it = it + g_proc_coords[0] * T;
-                    int real_ix = ix + g_proc_coords[1] * LX;
-                    int real_iy = iy + g_proc_coords[2] * LY;
-                    int real_iz = iz + g_proc_coords[3] * LZ;
-                    P23x[yind][ikernel_x_geom][iflavor][real_it][real_ix][real_iy][real_iz][mu][nu][la] += local_P23x[ind_for_local];
-                    // fprintf(stdout, "# [2p2 contr] At g_cart_id %d : Adding to t %d x %d y %d z %d mu %d nu %d la %d : %16.7e.\n", g_cart_id, real_it, real_ix, real_iy, real_iz, mu, nu, la, local_P23x[ind_for_local]);
-                    // fflush(stdout);
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-} // omp critical
-
-  const size_t n_P23x_global = (size_t)n_y * kernel_n * kernel_n_geom * 2 * T_global * LX_global * LY_global * LZ_global * 4 * 4 * 4;
-  MPI_Allreduce ( MPI_IN_PLACE, (void*)P23x[0][0][0][0][0][0][0][0][0], (int)n_P23x_global, MPI_DOUBLE, MPI_SUM, g_cart_grid );
-
+#else
+  memcpy ( P1[iflavor][0][0][0], local_P1, sizeof_P1 );
 #endif
 
 
   free(local_P1);
-  free(local_P23x);
 
 
   checkCudaErrors(cudaFree(d_P1));
@@ -641,7 +611,7 @@ inline void g5_gmu_prop(g_prop_t y, prop_t x, int iflavor, int mu, int ib, unsig
 // }
 
 inline void compute_2p2_pieces(
-    const prop_t fwd_y, double ***** P1, double ********** P23x,
+    const prop_t fwd_y, double ***** P1, double * P23x,
     const int* gsw, int iflavor, int io_proc, int n_y, const int * gycoords,
     const double xunit[2], double ** spinor_work, QED_kernel_temps kqed_t,
     unsigned VOLUME, int Nconf) {
@@ -1672,7 +1642,7 @@ int main(int argc, char **argv) {
   /***********************************************************
    * P2/3/x_{rho,sigma,nu} will be allocated later
    ***********************************************************/
-  double ********** P23x; // = init_6level_dtable ( MAX_SOURCE_PAIR_NUMBER, kernel_n*kernel_n_geom, 2, 4, 4, 4 );
+  double * P23x = NULL;  /* local-volume buffer, see compute_2p2_pieces */
 
   /***********************************************************
    * unit for x, y
@@ -1973,7 +1943,9 @@ int main(int argc, char **argv) {
         fprintf(stdout, "[hlbl_mII_invert_contract] running 2+2 pieces with n_yp = %d \n", n_yp);
 
         const int * gyp = (const int*) g_source_pair_targets_list[ipair];
-        P23x = init_10level_dtable ( n_yp, kernel_n*kernel_n_geom, 2, T_global, LX_global, LY_global, LZ_global, 4, 4, 4 );
+        /* local volume only: [n_yp][kernel_n][kernel_n_geom][T][LX][LY][LZ][4][4][4] */
+        const size_t n_P23x_per_field = (size_t)VOLUME * 4 * 4 * 4;
+        P23x = init_1level_dtable ( (size_t)n_yp * kernel_n * kernel_n_geom * n_P23x_per_field );
         if ( P23x == NULL )
         {
           fprintf(stderr, "[hlbl_mII_invert_contract] Error from init_Xlevel_dtable  %s %d\n", __FILE__, __LINE__ );
@@ -2009,39 +1981,54 @@ int main(int argc, char **argv) {
           fprintf(stdout, "[hlbl_mII_invert_contract] completed writing P1\n");
           fflush(stdout);
         }
-        if ( io_proc == 2 )
+        /**********************************************************
+         * P2, P3, ... : collective write, every rank writes its
+         * own local block of the global (1,T,LX,LY,LZ,4,4,4) array.
+         * NOTE: the leading flavor dimension is a dummy of size 1
+         * (was 2, but only iflavor 0 is ever computed and the other
+         * half was all zeros); kept so the 8-dim layout and a sum
+         * over the first index in the analysis still work.
+         **********************************************************/
         {
-          int ncdim = 8;
-          int cdim[ncdim] = { 2, T_global, LX_global, LY_global, LZ_global, 4, 4, 4 };
-          char key[100];
+          const int ncdim = 8;
+          const int gdim[ncdim]  = { 1, T_global, LX_global, LY_global, LZ_global, 4, 4, 4 };
+          const int start[ncdim] = { 0, g_proc_coords[0]*T, g_proc_coords[1]*LX, g_proc_coords[2]*LY, g_proc_coords[3]*LZ, 0, 0, 0 };
+          const int count[ncdim] = { 1, T, LX, LY, LZ, 4, 4, 4 };
+          char key[200];
           for ( int ikernel = 0; ikernel < kernel_n; ikernel++ )
           {
             for ( int iyp = 0; iyp < n_yp; iyp++ )
             {
               for ( int igeom = 0; igeom < kernel_n_geom; igeom++ )
               {
-                sprintf (key, "/%s/t%dx%dy%dz%d/t%dx%dy%dz%d/%s",
+                snprintf (key, sizeof(key), "/%s/t%dx%dy%dz%d/t%dx%dy%dz%d/%s",
                          KQED_GEOM_NAME[igeom], gsy[0], gsy[1], gsy[2], gsy[3],
                          gyp[4*iyp+0], gyp[4*iyp+1], gyp[4*iyp+2], gyp[4*iyp+3],
                          KQED_NAME[ikernel] );
 
-                exitstatus = write_h5_contraction (
-                    P23x[iyp][kernel_n_geom*ikernel+igeom][0][0][0][0][0][0][0], NULL, output_filename, key,
-                  "double", ncdim, cdim );
+                const double * field = P23x + ( ( (size_t)iyp * kernel_n + ikernel ) * kernel_n_geom + igeom ) * n_P23x_per_field;
+#ifdef HAVE_MPI
+                exitstatus = write_h5_hyperslab_parallel ( field, output_filename, key, ncdim, gdim, start, count, g_cart_grid );
+#else
+                exitstatus = write_h5_contraction ( (void*)field, NULL, output_filename, key, "double", ncdim, gdim );
+#endif
                 if ( exitstatus != 0 )
                 {
-                  fprintf (stderr, "[hlbl_mII_invert_contract] Error from write_h5_contraction  %s %d\n", __FILE__, __LINE__ );
+                  fprintf (stderr, "[hlbl_mII_invert_contract] Error from P23x write (status %d) %s %d\n", exitstatus, __FILE__, __LINE__ );
                   EXIT(12);
                 }
-                fprintf(stdout, "[hlbl_mII_invert_contract] completed writing %s\n", KQED_GEOM_NAME[igeom]);
-                fflush(stdout);
+                if ( g_cart_id == 0 )
+                {
+                  fprintf(stdout, "[hlbl_mII_invert_contract] completed writing %s\n", key);
+                  fflush(stdout);
+                }
               }
             }
           }
         }
 
-        fini_10level_dtable( &P23x );
-        
+        fini_1level_dtable( &P23x );
+
       } /* end of P1, P2, P3, ... */
 #if DO_CONNECTED
       for ( int iflavor = 0; iflavor <= 1; iflavor++ ) 

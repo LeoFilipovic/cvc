@@ -848,7 +848,7 @@ void ker_2p2_pieces(
         }
 
         // reduce (TODO faster reduce algo?)
-        int ind;
+        size_t ind;  /* size_t: n_y * 5 * VOLUME * 64 can exceed INT_MAX */
         for (int rho = 0; rho < 4; ++rho) {
           for (int sigma = 0; sigma < 4; ++sigma) {
             for (int nu = 0; nu < 4; ++nu) {
@@ -858,15 +858,15 @@ void ker_2p2_pieces(
               // z_absolute[0] z_absolute[1] z_absolute[2] z_absolute[3]
               // n_P23x = n_y * kernel_n * kernel_n_geom * T_global * LX_global * LY_global * LZ_global * 4 * 4 * 4
 
-              ind = ((((((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 0) * local_geom_arr[0] + coord_arr[0]) * local_geom_arr[1] + coord_arr[1]) * local_geom_arr[2] + coord_arr[2]) * local_geom_arr[3] + coord_arr[3]) *4 + rho)*4 + sigma)*4 + nu;
+              ind = ((((((((((size_t)yi)*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 0) * local_geom_arr[0] + coord_arr[0]) * local_geom_arr[1] + coord_arr[1]) * local_geom_arr[2] + coord_arr[2]) * local_geom_arr[3] + coord_arr[3]) *4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P2_0[rho][sigma][nu]);
-              ind = ((((((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 1) * local_geom_arr[0] + coord_arr[0]) * local_geom_arr[1] + coord_arr[1]) * local_geom_arr[2] + coord_arr[2]) * local_geom_arr[3] + coord_arr[3]) *4 + rho)*4 + sigma)*4 + nu;
+              ind = ((((((((((size_t)yi)*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 1) * local_geom_arr[0] + coord_arr[0]) * local_geom_arr[1] + coord_arr[1]) * local_geom_arr[2] + coord_arr[2]) * local_geom_arr[3] + coord_arr[3]) *4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P2_1[rho][sigma][nu]);
-              ind = ((((((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 2) * local_geom_arr[0] + coord_arr[0]) * local_geom_arr[1] + coord_arr[1]) * local_geom_arr[2] + coord_arr[2]) * local_geom_arr[3] + coord_arr[3]) *4 + rho)*4 + sigma)*4 + nu;
+              ind = ((((((((((size_t)yi)*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 2) * local_geom_arr[0] + coord_arr[0]) * local_geom_arr[1] + coord_arr[1]) * local_geom_arr[2] + coord_arr[2]) * local_geom_arr[3] + coord_arr[3]) *4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P3[rho][sigma][nu]);
-              ind = ((((((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 3) * local_geom_arr[0] + coord_arr[0]) * local_geom_arr[1] + coord_arr[1]) * local_geom_arr[2] + coord_arr[2]) * local_geom_arr[3] + coord_arr[3]) *4 + rho)*4 + sigma)*4 + nu;
+              ind = ((((((((((size_t)yi)*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 3) * local_geom_arr[0] + coord_arr[0]) * local_geom_arr[1] + coord_arr[1]) * local_geom_arr[2] + coord_arr[2]) * local_geom_arr[3] + coord_arr[3]) *4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P4_0[rho][sigma][nu]);
-              ind = ((((((((yi*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 4) * local_geom_arr[0] + coord_arr[0]) * local_geom_arr[1] + coord_arr[1]) * local_geom_arr[2] + coord_arr[2]) * local_geom_arr[3] + coord_arr[3]) *4 + rho)*4 + sigma)*4 + nu;
+              ind = ((((((((((size_t)yi)*CUDA_N_QED_KERNEL + ikernel)*CUDA_N_QED_GEOM + 4) * local_geom_arr[0] + coord_arr[0]) * local_geom_arr[1] + coord_arr[1]) * local_geom_arr[2] + coord_arr[2]) * local_geom_arr[3] + coord_arr[3]) *4 + rho)*4 + sigma)*4 + nu;
               atomicAdd_system(&P23x[ind], local_P4_1[rho][sigma][nu]);
             }
           }
